@@ -1,6 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { ScheduleEntry } from '../../domain/schedule';
-import { scheduleClassReminders, scheduleWeeklyReminder } from '../notifications';
+import { ClassReminder, scheduleClassReminders, scheduleWeeklyReminder } from '../notifications';
 
 type Pending = { identifier: string; content: { data: Record<string, unknown> }; trigger: { date: Date } };
 
@@ -32,8 +31,8 @@ jest.mock('expo-notifications', () => ({
 
 const NOW = new Date(2026, 10, 19, 8, 0);
 const ofKind = (kind: string) => [...mockPending.values()].filter((item) => item.content.data.kind === kind);
-const entry = (id: string, date: string, startTime = '09:00'): ScheduleEntry =>
-  ({ id, date, startTime, endTime: '23:59', subject: 'Math', className: '7B', room: '12' });
+const entry = (id: string, date: string, startTime = '09:00'): ClassReminder =>
+  ({ id, date, startTime, subject: 'Math', className: '7B', room: '12' });
 
 describe('notifications', () => {
   beforeEach(() => {
@@ -54,6 +53,7 @@ describe('notifications', () => {
     expect(reminders).toHaveLength(1);
     expect(reminders[0].content.data.entryId).toBe('upcoming');
     expect(reminders[0].trigger.date).toEqual(new Date(2026, 10, 19, 8, 45));
+    expect(reminders[0].content).toMatchObject({ title: 'Math starts soon', body: '7B · Room 12' });
   });
 
   it('cancels old reminders when the last class is removed', async () => {

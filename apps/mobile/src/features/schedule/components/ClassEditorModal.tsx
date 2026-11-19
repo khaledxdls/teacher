@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Toast from '../../../components/feedback/Toast';
-import { createId, dateKey, displayDate, sameName, SavedClass, ScheduleEntry, timeToMinutes } from '../../../domain/schedule';
-import { ActionError } from '../../../hooks/usePlannerData';
+import Button from '../../../components/ui/Button';
+import { AttendanceStatus, createId, dateKey, displayDate, EntryDraft, ScheduleEntry, timeToMinutes } from '../../../domain/schedule';
 import { useToast } from '../../../hooks/useToast';
+import { usePlanner } from '../../../state/PlannerProvider';
 import { colors } from '../../../theme/colors';
 import { sharedStyles } from '../../../theme/sharedStyles';
+import AttendanceList from './AttendanceList';
 import ClassPicker from './ClassPicker';
-import StudentsModal from './StudentsModal';
 import TimeRangeField from './TimeRangeField';
 
 /** `key` changes on every open so the form state starts fresh. */
@@ -15,21 +16,17 @@ export type EditorSession = { key: number; visible: boolean; date: Date; entry: 
 
 type Props = {
   session: EditorSession;
-  classes: SavedClass[];
   onClose: () => void;
-  onSave: (entry: ScheduleEntry) => ActionError;
-  onDelete: (id: string) => void;
-  onAddClass: (name: string) => SavedClass;
-  onAddStudent: (classId: string, name: string) => ActionError;
-  onRemoveStudent: (classId: string, studentId: string) => void;
+  /** Called when the user wants to edit the students of a class (the editor closes first). */
+  onManageStudents: (classId: string) => void;
 };
 
-export default function ClassEditorModal({ session, onClose, ...formProps }: Props) {
+export default function ClassEditorModal({ session, onClose, onManageStudents }: Props) {
   return (
     <Modal visible={session.visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={sharedStyles.modalBackdrop}>
         <View style={styles.card}>
-          <EditorForm key={session.key} date={session.date} entry={session.entry} onClose={onClose} {...formProps} />
+          <EditorForm key={session.key} date={session.date} entry={session.entry} onClose={onClose} onManageStudents={onManageStudents} />
         </View>
       </View>
     </Modal>
@@ -38,55 +35,76 @@ export default function ClassEditorModal({ session, onClose, ...formProps }: Pro
 
 type FormProps = Omit<Props, 'session'> & { date: Date; entry: ScheduleEntry | null };
 
-const emptyForm = { subject: '', className: '', startTime: '09:00', endTime: '10:00', room: '', notes: '' };
+type FormState = {
+  subject: string;
+  classId: string;
+  startTime: string;
+  endTime: string;
+  room: string;
+  notes: string;
+  attendance: Record<string, AttendanceStatus>;
+};
 
-function EditorForm({ date, entry, classes, onClose, onSave, onDelete, onAddClass, onAddStudent, onRemoveStudent }: FormProps) {
-  const [form, setForm] = useState(() => (entry
-    ? { subject: entry.subject, className: entry.className, startTime: entry.startTime, endTime: entry.endTime, room: entry.room, notes: entry.notes ?? '' }
+const emptyForm: FormState = { subject: '', classId: '', startTime: '09:00', endTime: '10:00', room: '', notes: '', attendance: {} };
+
+function EditorForm({ date, entry, onClose, onManageStudents }: FormProps) {
+  const planner = usePlanner();
+  const [form, setForm] = useState<FormState>(() => (entry
+    ? {
+      subject: entry.subject, classId: entry.classId, startTime: entry.startTime, endTime: entry.endTime,
+      room: entry.room, notes: entry.notes ?? '', attendance: entry.attendance ?? {},
+    }
     : emptyForm));
-  const [studentClassId, setStudentClassId] = useState<string | null>(null);
   const toast = useToast();
 
-  const selectedClass = classes.find((item) => sameName(item.name, form.className));
-  const studentClass = classes.find((item) => item.id === studentClassId) ?? null;
-  const setField = <K extends keyof typeof form>(field: K) => (value: (typeof form)[K]) =>
+  const selectedClass = form.classId ? planner.classById.get(form.classId) : undefined;
+  const setField = <K extends keyof FormState>(field: K) => (value: FormState[K]) =>
     setForm((current) => ({ ...current, [field]: value }));
 
   function save() {
-    if (!form.subject.trim() || !form.className.trim()) {
-      toast.show('Add a subject and class name first.');
+    if (!form.subject.trim() || !form.classId) {
+      toast.show('Add a subject and choose a class first.');
       return;
     }
     if (timeToMinutes(form.endTime) <= timeToMinutes(form.startTime)) {
       toast.show('The end time must be after the start time.');
       return;
     }
-    const error = onSave({
-      ...form,
+    // Only keep attendance for students who are still in the selected class.
+    const studentIds = new Set(selectedClass?.students.map((student) => student.id));
+    const attendance = Object.fromEntries(Object.entries(form.attendance).filter(([id]) => studentIds.has(id)));
+    const draft: EntryDraft = {
+      id: entry?.id ?? createId(),
+      date: dateKey(date),
       subject: form.subject.trim(),
-      className: form.className.trim(),
+      classId: form.classId,
+      startTime: form.startTime,
+      endTime: form.endTime,
       room: form.room.trim(),
       notes: form.notes.trim(),
-      date: dateKey(date),
-      id: entry?.id ?? createId(),
-    });
+      attendance,
+    };
+    const error = planner.saveEntry(draft);
     if (error) toast.show(error);
     else onClose();
   }
 
   function remove() {
     if (!entry) return;
-    onDelete(entry.id);
+    planner.deleteEntry(entry.id);
     onClose();
   }
 
-  function openStudents() {
+  function manageStudents() {
     if (!selectedClass) {
-      toast.show('Select a saved class first.');
+      toast.show('Select a class first.');
       return;
     }
-    setStudentClassId(selectedClass.id);
+    onClose();
+    onManageStudents(selectedClass.id);
   }
+
+  const students = selectedClass?.students ?? [];
 
   return (
     <>
@@ -106,10 +124,11 @@ function EditorForm({ date, entry, classes, onClose, onSave, onDelete, onAddClas
 
         <Text style={sharedStyles.fieldLabel}>Class</Text>
         <ClassPicker
-          classes={classes}
-          value={form.className}
-          onSelect={setField('className')}
-          onAddClass={onAddClass}
+          classes={planner.classes}
+          value={form.classId}
+          selectedName={selectedClass ? `${selectedClass.name}${selectedClass.deleted ? ' (deleted)' : ''}` : undefined}
+          onSelect={setField('classId')}
+          onAddClass={planner.addClass}
           onError={toast.show}
         />
 
@@ -135,33 +154,23 @@ function EditorForm({ date, entry, classes, onClose, onSave, onDelete, onAddClas
           textAlignVertical="top"
         />
 
-        <Pressable style={styles.manageStudentsButton} onPress={openStudents} accessibilityRole="button">
-          <Text style={styles.manageStudentsText}>
-            {selectedClass ? `Manage students (${selectedClass.students.length})` : 'Select a class to manage students'}
-          </Text>
-        </Pressable>
-
-        <Pressable style={styles.primaryButton} onPress={save} accessibilityRole="button">
-          <Text style={styles.primaryText}>{entry ? 'Save changes' : 'Add class'}</Text>
-        </Pressable>
-        {entry && (
-          <Pressable onPress={remove} style={styles.textButton} accessibilityRole="button">
-            <Text style={styles.deleteText}>Delete class</Text>
-          </Pressable>
+        {students.length > 0 && (
+          <AttendanceList students={students} attendance={form.attendance} onChange={setField('attendance')} />
         )}
-        <Pressable onPress={onClose} style={styles.textButton} accessibilityRole="button">
-          <Text style={styles.cancelText}>Cancel</Text>
-        </Pressable>
+
+        <Button
+          variant="outline"
+          style={styles.manageStudents}
+          onPress={manageStudents}
+          label={selectedClass ? `Manage students (${students.length})` : 'Select a class to manage students'}
+        />
+
+        <Button label={entry ? 'Save changes' : 'Add class'} onPress={save} />
+        {entry && <Button label="Delete class" variant="danger" onPress={remove} />}
+        <Button label="Cancel" variant="text" onPress={onClose} />
       </ScrollView>
 
       <Toast message={toast.message} />
-
-      <StudentsModal
-        savedClass={studentClass}
-        onClose={() => setStudentClassId(null)}
-        onAddStudent={onAddStudent}
-        onRemoveStudent={onRemoveStudent}
-      />
     </>
   );
 }
@@ -172,11 +181,5 @@ const styles = StyleSheet.create({
   notesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   notesHint: { color: colors.textFaint, fontSize: 11, marginBottom: 7 },
   notesInput: { minHeight: 76 },
-  manageStudentsButton: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 13, alignItems: 'center', marginBottom: 12 },
-  manageStudentsText: { color: colors.primary, fontWeight: '800' },
-  primaryButton: { backgroundColor: colors.primary, borderRadius: 10, padding: 15, alignItems: 'center' },
-  primaryText: { color: colors.surface, fontWeight: '800' },
-  textButton: { padding: 14, alignItems: 'center' },
-  cancelText: { color: colors.textMuted, fontWeight: '700' },
-  deleteText: { color: colors.danger, fontWeight: '800' },
+  manageStudents: { marginBottom: 12 },
 });

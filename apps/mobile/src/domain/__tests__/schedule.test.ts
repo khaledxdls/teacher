@@ -1,7 +1,9 @@
 import {
   addDays,
   addMonths,
+  alive,
   applyTemplateToWeek,
+  attendanceSummary,
   createId,
   createWeekTemplate,
   dateKey,
@@ -11,14 +13,15 @@ import {
   entriesInWeek,
   findScheduleConflict,
   formatTime,
-  mergeClasses,
-  migrateTemplate,
+  nextAttendanceStatus,
   parseDateKey,
-  SavedClass,
   ScheduleEntry,
   ScheduleTemplate,
   sortEntries,
+  studentAttendanceStats,
   timeToMinutes,
+  tombstone,
+  touch,
   weekDays,
   weekStart,
 } from '../schedule';
@@ -27,13 +30,15 @@ const entry = (overrides: Partial<ScheduleEntry> & Pick<ScheduleEntry, 'id' | 'd
   startTime: '09:00',
   endTime: '10:00',
   subject: 'Math',
-  className: '7B',
+  classId: 'c7b',
   room: '',
+  updatedAt: 1,
   ...overrides,
 });
 
 // Friday 13 Nov 2026 starts the teaching week that contains Thursday 19 Nov.
 const FRIDAY = new Date(2026, 10, 13);
+const NOW = 1_700_000_000_000;
 
 describe('dates', () => {
   it('formats and parses date keys as local dates', () => {
@@ -91,10 +96,20 @@ describe('times', () => {
   });
 });
 
-describe('ids', () => {
+describe('ids and sync metadata', () => {
   it('creates unique ids even within the same millisecond', () => {
     const ids = Array.from({ length: 1000 }, createId);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('touch marks a record dirty with the new timestamp', () => {
+    expect(touch(entry({ id: 'a', date: '2026-11-13' }), NOW)).toMatchObject({ updatedAt: NOW, dirty: true });
+  });
+
+  it('tombstones keep the record but hide it from alive()', () => {
+    const records = [entry({ id: 'a', date: '2026-11-13' }), tombstone(entry({ id: 'b', date: '2026-11-13' }), NOW)];
+    expect(records[1]).toMatchObject({ id: 'b', deleted: true, dirty: true, updatedAt: NOW });
+    expect(alive(records).map((item) => item.id)).toEqual(['a']);
   });
 });
 
@@ -136,104 +151,80 @@ describe('findScheduleConflict', () => {
   });
 });
 
-describe('mergeClasses', () => {
-  it('removes duplicate names case-insensitively and repairs missing students', () => {
-    const saved = [
-      { id: '7B', name: '7B', students: [{ id: 's1', name: 'Ana' }] },
-      { id: '7B', name: '7b ', students: [] },
-      { id: 'x', name: '8A', students: undefined },
-    ] as unknown as SavedClass[];
+describe('attendance', () => {
+  const students = [{ id: 's1', name: 'Ana' }, { id: 's2', name: 'Ben' }, { id: 's3', name: 'Cleo' }];
 
-    const merged = mergeClasses(saved, []);
-    expect(merged.map((item) => item.name)).toEqual(['7B', '8A']);
-    expect(merged[0].students).toEqual([{ id: 's1', name: 'Ana' }]);
-    expect(merged[1].students).toEqual([]);
+  it('cycles unmarked → present → late → absent → unmarked', () => {
+    expect(nextAttendanceStatus(undefined)).toBe('present');
+    expect(nextAttendanceStatus('present')).toBe('late');
+    expect(nextAttendanceStatus('late')).toBe('absent');
+    expect(nextAttendanceStatus('absent')).toBeUndefined();
   });
 
-  it('adds one class per new class name used by entries', () => {
-    const merged = mergeClasses([], [
-      entry({ id: '1', date: '2026-11-13', className: '9C' }),
-      entry({ id: '2', date: '2026-11-14', className: '9c' }),
-      entry({ id: '3', date: '2026-11-15', className: '10A' }),
-      entry({ id: '4', date: '2026-11-16', className: '  ' }),
-    ]);
-    expect(merged.map((item) => item.name)).toEqual(['9C', '10A']);
-    expect(new Set(merged.map((item) => item.id)).size).toBe(2);
+  it('summarizes attendance for the current students only', () => {
+    const summary = attendanceSummary({ attendance: { s1: 'present', s2: 'absent', gone: 'present' } }, students);
+    expect(summary).toEqual({ present: 1, late: 0, absent: 1, unmarked: 1 });
   });
 
-  it('gives every class a unique id', () => {
-    const merged = mergeClasses(
-      [{ id: 'same', name: 'A', students: [] }, { id: 'same', name: 'B', students: [] }],
-      [],
-    );
-    expect(merged[0].id).toBe('same');
-    expect(merged[1].id).not.toBe('same');
+  it('totals attendance per student across a class', () => {
+    const stats = studentAttendanceStats([
+      entry({ id: 'a', date: '2026-11-13', attendance: { s1: 'present', s2: 'late' } }),
+      entry({ id: 'b', date: '2026-11-14', attendance: { s1: 'absent' } }),
+      entry({ id: 'c', date: '2026-11-15', classId: 'other', attendance: { s1: 'present' } }),
+      entry({ id: 'd', date: '2026-11-16' }),
+    ], 'c7b');
+    expect(stats.get('s1')).toEqual({ present: 1, late: 0, absent: 1, marked: 2 });
+    expect(stats.get('s2')).toEqual({ present: 0, late: 1, absent: 0, marked: 1 });
+    expect(stats.has('s3')).toBe(false);
   });
 });
 
 describe('templates', () => {
   const week = [
-    entry({ id: 'fri', date: '2026-11-13', notes: 'homework' }),
+    entry({ id: 'fri', date: '2026-11-13', notes: 'homework', attendance: { s1: 'present' } }),
     entry({ id: 'thu', date: '2026-11-19', startTime: '11:00', endTime: '12:00', subject: 'Science' }),
   ];
 
-  it('stores 0-based day indexes without ids or notes', () => {
-    const template = createWeekTemplate('T', week, FRIDAY);
-    expect(template.version).toBe(2);
+  it('stores 0-based day indexes and only the reusable fields', () => {
+    const template = createWeekTemplate('Week A', week, FRIDAY, NOW);
+    expect(template).toMatchObject({ name: 'Week A', updatedAt: NOW, dirty: true });
     expect(template.entries).toEqual([
-      { day: 0, startTime: '09:00', endTime: '10:00', subject: 'Math', className: '7B', room: '' },
-      { day: 6, startTime: '11:00', endTime: '12:00', subject: 'Science', className: '7B', room: '' },
+      { day: 0, startTime: '09:00', endTime: '10:00', subject: 'Math', classId: 'c7b', room: '' },
+      { day: 6, startTime: '11:00', endTime: '12:00', subject: 'Science', classId: 'c7b', room: '' },
     ]);
   });
 
   it('applies classes to the same weekdays of another week', () => {
-    const template = createWeekTemplate('T', week, FRIDAY);
-    const nextFriday = addDays(FRIDAY, 7);
-    const result = applyTemplateToWeek(template, [], nextFriday);
-    expect(result.map((item) => [item.date, item.subject, item.notes])).toEqual([
-      ['2026-11-20', 'Math', ''],
-      ['2026-11-26', 'Science', ''],
+    const template = createWeekTemplate('T', week, FRIDAY, NOW);
+    const result = applyTemplateToWeek(template, [], addDays(FRIDAY, 7), NOW);
+    expect(result.map((item) => [item.date, item.subject, item.notes, item.dirty])).toEqual([
+      ['2026-11-20', 'Math', '', true],
+      ['2026-11-26', 'Science', '', true],
     ]);
   });
 
-  it('replaces classes only on the days the template covers', () => {
-    const template = createWeekTemplate('T', week, FRIDAY);
-    const nextFriday = addDays(FRIDAY, 7);
+  it('turns replaced classes into tombstones and keeps other days', () => {
+    const template = createWeekTemplate('T', week, FRIDAY, NOW);
     const current = [
       entry({ id: 'replaced', date: '2026-11-20' }),
       entry({ id: 'kept', date: '2026-11-21' }),
     ];
-    const result = applyTemplateToWeek(template, current, nextFriday);
-    expect(result.map((item) => item.id)).toContain('kept');
-    expect(result.map((item) => item.id)).not.toContain('replaced');
-    expect(result).toHaveLength(3);
+    const result = applyTemplateToWeek(template, current, addDays(FRIDAY, 7), NOW);
+    expect(result.find((item) => item.id === 'replaced')).toMatchObject({ deleted: true, dirty: true, updatedAt: NOW });
+    expect(result.find((item) => item.id === 'kept')).toEqual(current[1]);
+    expect(alive(result)).toHaveLength(3);
   });
 
   it('round-trips the same week onto itself', () => {
-    const template = createWeekTemplate('T', week, FRIDAY);
-    expect(applyTemplateToWeek(template, week, FRIDAY).map((item) => item.date).sort()).toEqual(['2026-11-13', '2026-11-19']);
-  });
-
-  it('migrates legacy templates that were saved one day late', () => {
-    const legacy: ScheduleTemplate = {
-      id: 'old',
-      name: 'Old',
-      entries: [
-        { day: 1, startTime: '09:00', endTime: '10:00', subject: 'Math', className: '7B', room: '' },
-        { day: 7, startTime: '11:00', endTime: '12:00', subject: 'Science', className: '7B', room: '' },
-      ],
-    };
-    const migrated = migrateTemplate(legacy);
-    expect(migrated.version).toBe(2);
-    expect(migrated.entries.map((item) => item.day)).toEqual([0, 6]);
-    expect(migrateTemplate(migrated)).toBe(migrated);
+    const template = createWeekTemplate('T', week, FRIDAY, NOW);
+    expect(alive(applyTemplateToWeek(template, week, FRIDAY, NOW)).map((item) => item.date).sort()).toEqual(['2026-11-13', '2026-11-19']);
   });
 
   it('ignores out-of-range days', () => {
     const template: ScheduleTemplate = {
-      id: 't', name: 'T', version: 2,
-      entries: [{ day: 9, startTime: '09:00', endTime: '10:00', subject: 'Math', className: '7B', room: '' }],
+      id: 't', name: 'T', updatedAt: NOW,
+      entries: [{ day: 9, startTime: '09:00', endTime: '10:00', subject: 'Math', classId: 'c7b', room: '' }],
     };
-    expect(applyTemplateToWeek(template, [], FRIDAY)).toEqual([]);
+    expect(applyTemplateToWeek(template, [], FRIDAY, NOW)).toEqual([]);
   });
 });

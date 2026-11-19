@@ -1,6 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import { parseDateKey, ScheduleEntry, sortEntries, timeToMinutes } from '../domain/schedule';
 
+/** What a class reminder needs: the entry plus its class name, resolved by the caller. */
+export type ClassReminder = Pick<ScheduleEntry, 'id' | 'date' | 'startTime' | 'subject' | 'room'> & { className: string };
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -64,14 +67,14 @@ export const scheduleWeeklyReminder = (enabled: boolean) => serialize(async () =
   }));
 });
 
-const reminderTime = (entry: ScheduleEntry) => {
+const reminderTime = (entry: ClassReminder) => {
   const date = parseDateKey(entry.date);
   date.setMinutes(timeToMinutes(entry.startTime) - CLASS_REMINDER_LEAD_MINUTES);
   return date;
 };
 
 /** Replaces all class reminders. Only the soonest upcoming classes are scheduled (see MAX_CLASS_REMINDERS). */
-export const scheduleClassReminders = (entries: ScheduleEntry[]) => serialize(async () => {
+export const scheduleClassReminders = (entries: ClassReminder[]) => serialize(async () => {
   await cancelByKind('class-reminder');
   const now = Date.now();
   const upcoming = sortEntries(entries)

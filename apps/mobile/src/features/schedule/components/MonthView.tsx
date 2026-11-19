@@ -1,14 +1,15 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { parseDateKey, ScheduleEntry } from '../../../domain/schedule';
+import { parseDateKey, SavedClass, ScheduleEntry } from '../../../domain/schedule';
 import { colors } from '../../../theme/colors';
 import { sharedStyles } from '../../../theme/sharedStyles';
 
 type Props = {
   entries: ScheduleEntry[];
+  classById: Map<string, SavedClass>;
   onOpenEntry: (date: Date, entry: ScheduleEntry) => void;
 };
 
-export default function MonthView({ entries, onOpenEntry }: Props) {
+export default function MonthView({ entries, classById, onOpenEntry }: Props) {
   return (
     <View style={styles.list}>
       {entries.map((entry) => {
@@ -18,7 +19,7 @@ export default function MonthView({ entries, onOpenEntry }: Props) {
             <Text style={styles.date}>{date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</Text>
             <View>
               <Text style={sharedStyles.classSubject}>{entry.subject}</Text>
-              <Text style={sharedStyles.classMeta}>{entry.startTime} · {entry.className}</Text>
+              <Text style={sharedStyles.classMeta}>{entry.startTime} · {classById.get(entry.classId)?.name ?? 'Unknown class'}</Text>
             </View>
           </Pressable>
         );

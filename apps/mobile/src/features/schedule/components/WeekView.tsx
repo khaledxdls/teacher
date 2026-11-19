@@ -1,17 +1,18 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { dateKey, ScheduleEntry } from '../../../domain/schedule';
+import { attendanceSummary, dateKey, SavedClass, ScheduleEntry } from '../../../domain/schedule';
 import { accentColors, colors } from '../../../theme/colors';
 import { sharedStyles } from '../../../theme/sharedStyles';
 
 type Props = {
   days: Date[];
   entries: ScheduleEntry[];
+  classById: Map<string, SavedClass>;
   todayKey: string;
   onOpenEntry: (date: Date, entry: ScheduleEntry) => void;
   onAddToDay: (date: Date) => void;
 };
 
-export default function WeekView({ days, entries, todayKey, onOpenEntry, onAddToDay }: Props) {
+export default function WeekView({ days, entries, classById, todayKey, onOpenEntry, onAddToDay }: Props) {
   return (
     <>
       {days.map((day) => {
@@ -25,22 +26,33 @@ export default function WeekView({ days, entries, todayKey, onOpenEntry, onAddTo
               <Text style={[styles.dayNumber, isToday && styles.todayNumber]}>{day.getDate()}</Text>
             </View>
             <View style={styles.dayEntries}>
-              {dayEntries.map((entry, index) => (
-                <Pressable
-                  key={entry.id}
-                  onPress={() => onOpenEntry(day, entry)}
-                  style={[styles.classCard, { borderLeftColor: accentColors[index % accentColors.length] }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${entry.subject}, ${entry.startTime} to ${entry.endTime}`}
-                >
-                  <View style={styles.classCardTop}>
-                    <Text style={styles.classTime}>{entry.startTime} – {entry.endTime}</Text>
-                    {entry.notes ? <Text style={styles.noteBadge}>NOTE</Text> : null}
-                  </View>
-                  <Text style={sharedStyles.classSubject}>{entry.subject}</Text>
-                  <Text style={sharedStyles.classMeta}>{entry.className}{entry.room ? `  ·  Room ${entry.room}` : ''}</Text>
-                </Pressable>
-              ))}
+              {dayEntries.map((entry, index) => {
+                const savedClass = classById.get(entry.classId);
+                const students = savedClass?.students ?? [];
+                const summary = attendanceSummary(entry, students);
+                const marked = students.length - summary.unmarked;
+                return (
+                  <Pressable
+                    key={entry.id}
+                    onPress={() => onOpenEntry(day, entry)}
+                    style={[styles.classCard, { borderLeftColor: accentColors[index % accentColors.length] }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${entry.subject}, ${entry.startTime} to ${entry.endTime}`}
+                  >
+                    <View style={styles.classCardTop}>
+                      <Text style={styles.classTime}>{entry.startTime} – {entry.endTime}</Text>
+                      <View style={styles.badges}>
+                        {marked > 0 && (
+                          <Text style={styles.attendanceBadge}>{summary.present + summary.late}/{students.length} IN</Text>
+                        )}
+                        {entry.notes ? <Text style={styles.noteBadge}>NOTE</Text> : null}
+                      </View>
+                    </View>
+                    <Text style={sharedStyles.classSubject}>{entry.subject}</Text>
+                    <Text style={sharedStyles.classMeta}>{savedClass?.name ?? 'Unknown class'}{entry.room ? `  ·  Room ${entry.room}` : ''}</Text>
+                  </Pressable>
+                );
+              })}
               {dayEntries.length === 0 && <Text style={styles.emptyDay}>No classes planned</Text>}
               <Pressable onPress={() => onAddToDay(day)} accessibilityRole="button">
                 <Text style={styles.addDay}>＋ Add class</Text>
@@ -63,7 +75,9 @@ const styles = StyleSheet.create({
   dayEntries: { flex: 1, marginLeft: 8 },
   classCard: { backgroundColor: colors.surface, borderRadius: 12, borderLeftWidth: 4, padding: 12, marginBottom: 7, shadowColor: colors.navy, shadowOpacity: 0.05, shadowRadius: 6, elevation: 1 },
   classCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  badges: { flexDirection: 'row', gap: 8 },
   noteBadge: { color: colors.purple, fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
+  attendanceBadge: { color: '#13894a', fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
   classTime: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
   emptyDay: { color: colors.textFaint, fontSize: 12, paddingVertical: 9 },
   addDay: { color: colors.primary, padding: 9, fontWeight: '700' },

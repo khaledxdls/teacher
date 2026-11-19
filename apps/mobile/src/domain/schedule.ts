@@ -1,24 +1,48 @@
-export type ScheduleEntry = {
+/**
+ * Every synced record carries sync metadata:
+ * - `updatedAt`: client timestamp (ms) of the last change, used for last-write-wins merging.
+ * - `deleted`: tombstone flag; deleted records are kept so the deletion can sync to other devices.
+ * - `dirty`: local-only flag marking changes that have not been pushed to the server yet.
+ */
+export type SyncMeta = { updatedAt: number; deleted?: boolean; dirty?: boolean };
+
+export type AttendanceStatus = 'present' | 'absent' | 'late';
+export const ATTENDANCE_STATUSES: AttendanceStatus[] = ['present', 'late', 'absent'];
+
+export type ScheduleEntry = SyncMeta & {
   id: string;
   date: string;
   startTime: string;
   endTime: string;
   subject: string;
-  className: string;
+  classId: string;
   room: string;
   notes?: string;
+  /** Attendance by student id. Students without a value are unmarked. */
+  attendance?: Record<string, AttendanceStatus>;
 };
 
-export type TemplateEntry = Omit<ScheduleEntry, 'id' | 'date' | 'notes'> & { day: number };
-/** `version: 2` marks templates whose `day` is 0-based (Friday = 0). Older templates were saved shifted by +1. */
-export type ScheduleTemplate = { id: string; name: string; entries: TemplateEntry[]; version?: 2 };
+/** The editable part of an entry; sync metadata is added when it is saved. */
+export type EntryDraft = Omit<ScheduleEntry, keyof SyncMeta>;
+
+export type TemplateEntry = Pick<ScheduleEntry, 'startTime' | 'endTime' | 'subject' | 'classId' | 'room'> & { day: number };
+export type ScheduleTemplate = SyncMeta & { id: string; name: string; entries: TemplateEntry[] };
 export type Student = { id: string; name: string };
-export type SavedClass = { id: string; name: string; students: Student[] };
+export type SavedClass = SyncMeta & { id: string; name: string; students: Student[] };
+
+export type PlannerState = { entries: ScheduleEntry[]; classes: SavedClass[]; templates: ScheduleTemplate[] };
+export const emptyPlannerState: PlannerState = { entries: [], classes: [], templates: [] };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LAST_MINUTE_OF_DAY = 23 * 60 + 59;
 
 export const createId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+/** Marks a record as changed locally at `now`. */
+export const touch = <T extends SyncMeta>(record: T, now: number): T => ({ ...record, updatedAt: now, dirty: true });
+/** Replaces a record with a tombstone. */
+export const tombstone = <T extends SyncMeta>(record: T, now: number): T => ({ ...touch(record, now), deleted: true });
+export const alive = <T extends SyncMeta>(records: T[]) => records.filter((record) => !record.deleted);
 
 export const pad = (value: number) => String(value).padStart(2, '0');
 export const dateKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -65,7 +89,7 @@ export const weekDays = (start: Date) => Array.from({ length: 7 }, (_, index) =>
 export const displayDate = (date: Date) =>
   date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
-export const sortEntries = (items: ScheduleEntry[]) =>
+export const sortEntries = <T extends Pick<ScheduleEntry, 'date' | 'startTime'>>(items: T[]) =>
   [...items].sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
 
 export const entriesInWeek = (entries: ScheduleEntry[], start: Date) => {
@@ -95,7 +119,7 @@ export const defaultEndTime = (startTime: string) =>
 
 export const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export const findScheduleConflict = (candidate: ScheduleEntry, entries: ScheduleEntry[]) =>
+export const findScheduleConflict = (candidate: Pick<ScheduleEntry, 'id' | 'date' | 'startTime' | 'endTime'>, entries: ScheduleEntry[]) =>
   entries.find((entry) => (
     entry.id !== candidate.id &&
     entry.date === candidate.date &&
@@ -103,45 +127,66 @@ export const findScheduleConflict = (candidate: ScheduleEntry, entries: Schedule
     timeToMinutes(candidate.endTime) > timeToMinutes(entry.startTime)
   ));
 
-/**
- * Normalizes saved classes: drops duplicate names (keeping the first) and adds a class
- * for every class name used by an entry that is not saved yet.
- */
-export function mergeClasses(saved: SavedClass[], entries: ScheduleEntry[]): SavedClass[] {
-  const result: SavedClass[] = [];
-  const usedIds = new Set<string>();
-  for (const item of saved) {
-    if (!item?.name?.trim() || result.some((existing) => sameName(existing.name, item.name))) continue;
-    const id = item.id && !usedIds.has(item.id) ? item.id : createId();
-    usedIds.add(id);
-    result.push({ id, name: item.name.trim(), students: Array.isArray(item.students) ? item.students : [] });
+/** Counts attendance for the given students; students without a mark are `unmarked`. */
+export function attendanceSummary(entry: Pick<ScheduleEntry, 'attendance'>, students: Student[]) {
+  const counts = { present: 0, late: 0, absent: 0, unmarked: 0 };
+  for (const student of students) {
+    const status = entry.attendance?.[student.id];
+    counts[status ?? 'unmarked'] += 1;
   }
-  for (const entry of entries) {
-    const name = entry.className.trim();
-    if (!name || result.some((existing) => sameName(existing.name, name))) continue;
-    result.push({ id: createId(), name, students: [] });
-  }
-  return result;
+  return counts;
 }
 
-/** Converts templates saved before the off-by-one fix to 0-based day indexes. */
-export const migrateTemplate = (template: ScheduleTemplate): ScheduleTemplate =>
-  template.version === 2
-    ? template
-    : { ...template, version: 2, entries: template.entries.map((entry) => ({ ...entry, day: Math.max(0, entry.day - 1) })) };
+export type StudentAttendanceStats = { present: number; late: number; absent: number; marked: number };
 
-export const createWeekTemplate = (name: string, weekEntries: ScheduleEntry[], start: Date): ScheduleTemplate => ({
+/** Attendance totals per student id across all entries of a class. */
+export function studentAttendanceStats(entries: ScheduleEntry[], classId: string) {
+  const stats = new Map<string, StudentAttendanceStats>();
+  for (const entry of entries) {
+    if (entry.classId !== classId || !entry.attendance) continue;
+    for (const [studentId, status] of Object.entries(entry.attendance)) {
+      const current = stats.get(studentId) ?? { present: 0, late: 0, absent: 0, marked: 0 };
+      current[status] += 1;
+      current.marked += 1;
+      stats.set(studentId, current);
+    }
+  }
+  return stats;
+}
+
+/** Cycles unmarked → present → late → absent → unmarked. */
+export function nextAttendanceStatus(current: AttendanceStatus | undefined): AttendanceStatus | undefined {
+  if (!current) return ATTENDANCE_STATUSES[0];
+  const index = ATTENDANCE_STATUSES.indexOf(current);
+  return ATTENDANCE_STATUSES[index + 1];
+}
+
+export const createWeekTemplate = (name: string, weekEntries: ScheduleEntry[], start: Date, now: number): ScheduleTemplate => ({
   id: createId(),
   name,
-  version: 2,
-  entries: weekEntries.map(({ id: _id, date, notes: _notes, ...entry }) => ({ ...entry, day: daysBetween(start, parseDateKey(date)) })),
+  updatedAt: now,
+  dirty: true,
+  entries: weekEntries.map((entry) => ({
+    day: daysBetween(start, parseDateKey(entry.date)),
+    startTime: entry.startTime,
+    endTime: entry.endTime,
+    subject: entry.subject,
+    classId: entry.classId,
+    room: entry.room,
+  })),
 });
 
-/** Replaces every day the template covers in the given week with the template's classes. */
-export function applyTemplateToWeek(template: ScheduleTemplate, entries: ScheduleEntry[], start: Date): ScheduleEntry[] {
-  const copied = template.entries
+/**
+ * Replaces every day the template covers in the given week with the template's classes.
+ * Replaced entries become tombstones so the change syncs.
+ */
+export function applyTemplateToWeek(template: ScheduleTemplate, entries: ScheduleEntry[], start: Date, now: number): ScheduleEntry[] {
+  const copied: ScheduleEntry[] = template.entries
     .filter((entry) => entry.day >= 0 && entry.day < 7)
-    .map(({ day, ...entry }) => ({ ...entry, notes: '', date: dateKey(addDays(start, day)), id: createId() }));
+    .map(({ day, ...entry }) => ({ ...entry, notes: '', date: dateKey(addDays(start, day)), id: createId(), updatedAt: now, dirty: true }));
   const coveredDays = new Set(copied.map((entry) => entry.date));
-  return [...entries.filter((entry) => !coveredDays.has(entry.date)), ...copied];
+  return [
+    ...entries.map((entry) => (!entry.deleted && coveredDays.has(entry.date) ? tombstone(entry, now) : entry)),
+    ...copied,
+  ];
 }
