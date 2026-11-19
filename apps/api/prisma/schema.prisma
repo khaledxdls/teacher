@@ -8,9 +8,30 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  passwordHash String
+  /// Incremented once per sync that writes changes; every written record gets the new value.
+  syncVersion  Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  records      SyncRecord[]
+}
+
+/// One planner record (entry, class or template) belonging to a user, stored as JSON.
+/// Merged with last-write-wins on the client-supplied `clientUpdatedAt`.
+model SyncRecord {
+  userId          String
+  collection      String
+  id              String
+  data            Json
+  deleted         Boolean  @default(false)
+  clientUpdatedAt DateTime
+  /// The user's `syncVersion` when this record was last written; clients pull records newer than their cursor.
+  version         Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, collection, id])
+  @@index([userId, version])
 }
