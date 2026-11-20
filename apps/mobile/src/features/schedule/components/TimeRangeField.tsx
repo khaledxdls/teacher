@@ -1,89 +1,39 @@
-import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { defaultEndTime, formatTime, timeToDate, timeToMinutes } from '../../../domain/schedule';
-import { colors } from '../../../theme/colors';
+import { Text, View } from 'react-native';
+import DateTimeInput from '../../../components/ui/DateTimeInput';
+import { defaultEndTime, timeToMinutes } from '../../../domain/dates';
+import { TimeOfDay } from '../../../domain/types';
+import { useI18n } from '../../../i18n/I18nProvider';
+import { createStyles } from '../../../theme/createStyles';
 
-type TimeRange = { startTime: string; endTime: string };
+type TimeRange = { startTime: TimeOfDay; endTime: TimeOfDay };
 type Props = TimeRange & { onChange: (range: TimeRange) => void };
-type Field = 'start' | 'end';
 
-// Android shows the picker as a dialog that closes itself after each pick.
-// iOS renders it inline and fires onChange on every wheel movement, so it stays
-// open until the user taps "Done" (or the same field again).
-const isIOS = Platform.OS === 'ios';
-
+/** Start and end time; moving the start past the end pushes the end one hour later. */
 export default function TimeRangeField({ startTime, endTime, onChange }: Props) {
-  const [active, setActive] = useState<Field | null>(null);
+  const styles = useStyles();
+  const { t } = useI18n();
 
-  function update(field: Field, time: string) {
-    if (field === 'end') {
-      onChange({ startTime, endTime: time });
-      return;
-    }
-    const pushEnd = timeToMinutes(endTime) <= timeToMinutes(time);
-    onChange({ startTime: time, endTime: pushEnd ? defaultEndTime(time) : endTime });
-  }
-
-  function handleChange(event: DateTimePickerEvent, value?: Date) {
-    const field = active;
-    if (!isIOS) setActive(null);
-    if (event.type !== 'set' || !value || !field) return;
-    update(field, formatTime(value));
-  }
-
-  const toggle = (field: Field) => setActive((current) => (current === field ? null : field));
+  const changeStart = (time: TimeOfDay) =>
+    onChange({ startTime: time, endTime: timeToMinutes(endTime) <= timeToMinutes(time) ? defaultEndTime(time) : endTime });
 
   return (
-    <>
-      <View style={styles.row}>
-        <TimeButton label="Starts" value={startTime} selected={active === 'start'} onPress={() => toggle('start')} />
-        <Text style={styles.separator}>to</Text>
-        <TimeButton label="Ends" value={endTime} selected={active === 'end'} onPress={() => toggle('end')} />
+    <View style={styles.row}>
+      <View style={styles.field}>
+        <Text style={styles.label}>{t('editor.starts')}</Text>
+        <DateTimeInput mode="time" value={startTime} onChange={changeStart} accessibilityLabel={t('editor.starts')} />
       </View>
-      {active && (
-        <View style={isIOS ? styles.inlinePicker : undefined}>
-          <DateTimePicker
-            value={timeToDate(active === 'start' ? startTime : endTime)}
-            mode="time"
-            display={isIOS ? 'spinner' : 'clock'}
-            onChange={handleChange}
-          />
-          {isIOS && (
-            <Pressable style={styles.doneButton} onPress={() => setActive(null)} accessibilityRole="button">
-              <Text style={styles.doneText}>Done</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
-    </>
+      <Text style={styles.separator}>{t('editor.to')}</Text>
+      <View style={styles.field}>
+        <Text style={styles.label}>{t('editor.ends')}</Text>
+        <DateTimeInput mode="time" value={endTime} onChange={(time) => onChange({ startTime, endTime: time })} accessibilityLabel={t('editor.ends')} />
+      </View>
+    </View>
   );
 }
 
-type TimeButtonProps = { label: string; value: string; selected: boolean; onPress: () => void };
-
-function TimeButton({ label, value, selected, onPress }: TimeButtonProps) {
-  return (
-    <Pressable
-      style={[styles.timeButton, selected && styles.timeButtonSelected]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${label} at ${value}`}
-    >
-      <Text style={styles.timeLabel}>{label}</Text>
-      <Text style={styles.timeValue}>{value}</Text>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  timeButton: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 11 },
-  timeButtonSelected: { borderColor: colors.primary },
-  timeLabel: { color: colors.textSubtle, fontSize: 11, fontWeight: '700' },
-  timeValue: { color: colors.navy, fontSize: 20, fontWeight: '800', marginTop: 3 },
-  separator: { color: colors.textSubtle, marginHorizontal: 10 },
-  inlinePicker: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, marginBottom: 12, overflow: 'hidden' },
-  doneButton: { alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: colors.divider },
-  doneText: { color: colors.primary, fontWeight: '800' },
-});
+const useStyles = createStyles((c) => ({
+  row: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12, gap: 10 },
+  field: { flex: 1, gap: 6, alignItems: 'flex-start' },
+  label: { color: c.textSubtle, fontSize: 11, fontWeight: '700' },
+  separator: { color: c.textSubtle, paddingBottom: 12 },
+}));

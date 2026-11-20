@@ -1,36 +1,39 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { parseDateKey, SavedClass, ScheduleEntry } from '../../../domain/schedule';
-import { colors } from '../../../theme/colors';
-import { sharedStyles } from '../../../theme/sharedStyles';
+import { Pressable, Text, View } from 'react-native';
+import { parseDateKey } from '../../../domain/dates';
+import { SavedClass, ScheduleEntry } from '../../../domain/types';
+import { useI18n } from '../../../i18n/I18nProvider';
+import { createStyles } from '../../../theme/createStyles';
+import { useSharedStyles } from '../../../theme/sharedStyles';
 
 type Props = {
-  entries: ScheduleEntry[];
+  lessons: ScheduleEntry[];
   classById: Map<string, SavedClass>;
-  onOpenEntry: (date: Date, entry: ScheduleEntry) => void;
+  onOpenLesson: (date: Date, lesson: ScheduleEntry) => void;
 };
 
-export default function MonthView({ entries, classById, onOpenEntry }: Props) {
+export default function MonthView({ lessons, classById, onOpenLesson }: Props) {
+  const styles = useStyles();
+  const shared = useSharedStyles();
+  const { t, formatDate } = useI18n();
   return (
     <View style={styles.list}>
-      {entries.map((entry) => {
-        const date = parseDateKey(entry.date);
-        return (
-          <Pressable key={entry.id} onPress={() => onOpenEntry(date, entry)} style={styles.item} accessibilityRole="button">
-            <Text style={styles.date}>{date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</Text>
-            <View>
-              <Text style={sharedStyles.classSubject}>{entry.subject}</Text>
-              <Text style={sharedStyles.classMeta}>{entry.startTime} · {classById.get(entry.classId)?.name ?? 'Unknown class'}</Text>
-            </View>
-          </Pressable>
-        );
-      })}
-      {entries.length === 0 && <Text style={sharedStyles.emptyText}>No classes planned this month.</Text>}
+      {lessons.map((lesson) => (
+        <Pressable key={lesson.id} onPress={() => onOpenLesson(parseDateKey(lesson.date), lesson)} style={styles.item} accessibilityRole="button">
+          <Text style={styles.date}>{formatDate(lesson.date, 'weekdayDay')}</Text>
+          <View style={styles.text}>
+            <Text style={shared.lessonSubject}>{lesson.subject}</Text>
+            <Text style={shared.lessonMeta}>{lesson.startTime} · {classById.get(lesson.classId)?.name ?? t('common.unknownClass')}</Text>
+          </View>
+        </Pressable>
+      ))}
+      {lessons.length === 0 && <Text style={shared.emptyText}>{t('schedule.noLessonsMonth')}</Text>}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createStyles((c) => ({
   list: { gap: 9 },
-  item: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, flexDirection: 'row', gap: 14 },
-  date: { width: 90, color: colors.primary, fontWeight: '800' },
-});
+  item: { backgroundColor: c.surface, padding: 14, borderRadius: 12, flexDirection: 'row', gap: 14 },
+  date: { width: 90, color: c.primary, fontWeight: '800', textAlign: 'auto' },
+  text: { flex: 1 },
+}));

@@ -2,8 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 import { ComponentProps } from 'react';
 import { ColorValue } from 'react-native';
+import { useI18n } from '../../i18n/I18nProvider';
 import { useSync } from '../../state/SyncProvider';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeProvider';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 const icon = (name: IconName) => function TabIcon({ color, size }: { color: ColorValue | null; size: number }) {
@@ -11,29 +12,33 @@ const icon = (name: IconName) => function TabIcon({ color, size }: { color: Colo
 };
 
 export default function TabsLayout() {
+  const { palette } = useTheme();
+  const { t } = useI18n();
   const sync = useSync();
-  // Small dot on the Account tab when signed out or when the last sync failed.
-  const accountBadge = sync.ready && (!sync.session || sync.status === 'error') ? '' : undefined;
+  // Small dot on Settings when signed out or when the last sync failed.
+  const settingsBadge = sync.ready && (!sync.session || sync.status === 'error') ? '' : undefined;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSubtle,
-        headerTitleStyle: { color: colors.navy, fontWeight: '800' },
-        headerStyle: { backgroundColor: colors.surface },
+        tabBarActiveTintColor: palette.primary,
+        tabBarInactiveTintColor: palette.textSubtle,
+        tabBarStyle: { backgroundColor: palette.surface, borderTopColor: palette.divider },
+        headerTitleStyle: { color: palette.text, fontWeight: '800' },
+        headerStyle: { backgroundColor: palette.surface },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Schedule', headerShown: false, tabBarIcon: icon('calendar-outline') }} />
-      <Tabs.Screen name="classes" options={{ title: 'Classes', tabBarIcon: icon('people-outline') }} />
-      <Tabs.Screen name="templates" options={{ title: 'Templates', tabBarIcon: icon('copy-outline') }} />
+      <Tabs.Screen name="index" options={{ title: t('tabs.today'), headerShown: false, tabBarIcon: icon('today-outline') }} />
+      <Tabs.Screen name="schedule" options={{ title: t('tabs.schedule'), headerShown: false, tabBarIcon: icon('calendar-outline') }} />
+      <Tabs.Screen name="classes" options={{ title: t('tabs.classes'), tabBarIcon: icon('people-outline') }} />
+      <Tabs.Screen name="templates" options={{ title: t('tabs.templates'), tabBarIcon: icon('copy-outline') }} />
       <Tabs.Screen
-        name="account"
+        name="settings"
         options={{
-          title: 'Account',
-          tabBarIcon: icon('person-circle-outline'),
-          tabBarBadge: accountBadge,
-          tabBarBadgeStyle: { minWidth: 10, maxHeight: 10, borderRadius: 5, backgroundColor: colors.danger },
+          title: t('tabs.settings'),
+          tabBarIcon: icon('settings-outline'),
+          tabBarBadge: settingsBadge,
+          tabBarBadgeStyle: { minWidth: 10, maxHeight: 10, borderRadius: 5, backgroundColor: palette.danger },
         }}
       />
     </Tabs>

@@ -1,61 +1,54 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { attendanceSummary, dateKey, SavedClass, ScheduleEntry } from '../../../domain/schedule';
-import { accentColors, colors } from '../../../theme/colors';
-import { sharedStyles } from '../../../theme/sharedStyles';
+import { Pressable, Text, View } from 'react-native';
+import { holidayOn } from '../../../domain/calendar';
+import { dateKey } from '../../../domain/dates';
+import { CalendarEvent, SavedClass, ScheduleEntry } from '../../../domain/types';
+import { useI18n } from '../../../i18n/I18nProvider';
+import { createStyles } from '../../../theme/createStyles';
+import { useTheme } from '../../../theme/ThemeProvider';
+import LessonCard from '../../lessons/LessonCard';
 
 type Props = {
   days: Date[];
-  entries: ScheduleEntry[];
+  lessons: ScheduleEntry[];
   classById: Map<string, SavedClass>;
-  todayKey: string;
-  onOpenEntry: (date: Date, entry: ScheduleEntry) => void;
+  events: CalendarEvent[];
+  today: string;
+  onOpenLesson: (date: Date, lesson: ScheduleEntry) => void;
   onAddToDay: (date: Date) => void;
 };
 
-export default function WeekView({ days, entries, classById, todayKey, onOpenEntry, onAddToDay }: Props) {
+export default function WeekView({ days, lessons, classById, events, today, onOpenLesson, onAddToDay }: Props) {
+  const styles = useStyles();
+  const { palette } = useTheme();
+  const { t, formatDate } = useI18n();
+
   return (
     <>
       {days.map((day) => {
         const key = dateKey(day);
-        const isToday = key === todayKey;
-        const dayEntries = entries.filter((entry) => entry.date === key);
+        const isToday = key === today;
+        const holiday = holidayOn(events, key);
+        const dayLessons = lessons.filter((lesson) => lesson.date === key);
         return (
           <View key={key} style={[styles.dayRow, isToday && styles.todayRow]}>
             <View style={styles.dayLabel}>
-              <Text style={styles.dayName}>{day.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase()}</Text>
+              <Text style={styles.dayName}>{formatDate(day, 'weekday').toUpperCase()}</Text>
               <Text style={[styles.dayNumber, isToday && styles.todayNumber]}>{day.getDate()}</Text>
             </View>
-            <View style={styles.dayEntries}>
-              {dayEntries.map((entry, index) => {
-                const savedClass = classById.get(entry.classId);
-                const students = savedClass?.students ?? [];
-                const summary = attendanceSummary(entry, students);
-                const marked = students.length - summary.unmarked;
-                return (
-                  <Pressable
-                    key={entry.id}
-                    onPress={() => onOpenEntry(day, entry)}
-                    style={[styles.classCard, { borderLeftColor: accentColors[index % accentColors.length] }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${entry.subject}, ${entry.startTime} to ${entry.endTime}`}
-                  >
-                    <View style={styles.classCardTop}>
-                      <Text style={styles.classTime}>{entry.startTime} – {entry.endTime}</Text>
-                      <View style={styles.badges}>
-                        {marked > 0 && (
-                          <Text style={styles.attendanceBadge}>{summary.present + summary.late}/{students.length} IN</Text>
-                        )}
-                        {entry.notes ? <Text style={styles.noteBadge}>NOTE</Text> : null}
-                      </View>
-                    </View>
-                    <Text style={sharedStyles.classSubject}>{entry.subject}</Text>
-                    <Text style={sharedStyles.classMeta}>{savedClass?.name ?? 'Unknown class'}{entry.room ? `  ·  Room ${entry.room}` : ''}</Text>
-                  </Pressable>
-                );
-              })}
-              {dayEntries.length === 0 && <Text style={styles.emptyDay}>No classes planned</Text>}
+            <View style={styles.dayLessons}>
+              {holiday && <Text style={styles.holiday}>{t('schedule.holiday', { title: holiday.title })}</Text>}
+              {dayLessons.map((lesson, index) => (
+                <LessonCard
+                  key={lesson.id}
+                  lesson={lesson}
+                  savedClass={classById.get(lesson.classId)}
+                  accent={palette.accents[index % palette.accents.length]}
+                  onPress={() => onOpenLesson(day, lesson)}
+                />
+              ))}
+              {dayLessons.length === 0 && !holiday && <Text style={styles.empty}>{t('schedule.noLessonsDay')}</Text>}
               <Pressable onPress={() => onAddToDay(day)} accessibilityRole="button">
-                <Text style={styles.addDay}>＋ Add class</Text>
+                <Text style={styles.add}>{t('schedule.addToDay')}</Text>
               </Pressable>
             </View>
           </View>
@@ -65,20 +58,15 @@ export default function WeekView({ days, entries, classById, todayKey, onOpenEnt
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createStyles((c) => ({
   dayRow: { flexDirection: 'row', marginBottom: 12, borderRadius: 14, paddingVertical: 5 },
-  todayRow: { backgroundColor: colors.todaySoft },
+  todayRow: { backgroundColor: c.surfaceHighlight },
   dayLabel: { width: 52, alignItems: 'center', paddingTop: 8 },
-  dayName: { color: colors.textSubtle, fontSize: 11, fontWeight: '700' },
-  dayNumber: { color: colors.navy, fontSize: 20, fontWeight: '800', marginTop: 4 },
-  todayNumber: { color: colors.primary },
-  dayEntries: { flex: 1, marginLeft: 8 },
-  classCard: { backgroundColor: colors.surface, borderRadius: 12, borderLeftWidth: 4, padding: 12, marginBottom: 7, shadowColor: colors.navy, shadowOpacity: 0.05, shadowRadius: 6, elevation: 1 },
-  classCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  badges: { flexDirection: 'row', gap: 8 },
-  noteBadge: { color: colors.purple, fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
-  attendanceBadge: { color: '#13894a', fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
-  classTime: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-  emptyDay: { color: colors.textFaint, fontSize: 12, paddingVertical: 9 },
-  addDay: { color: colors.primary, padding: 9, fontWeight: '700' },
-});
+  dayName: { color: c.textSubtle, fontSize: 11, fontWeight: '700' },
+  dayNumber: { color: c.text, fontSize: 20, fontWeight: '800', marginTop: 4 },
+  todayNumber: { color: c.primary },
+  dayLessons: { flex: 1, marginStart: 8, marginEnd: 4 },
+  holiday: { color: c.warning, backgroundColor: c.warningSoft, fontWeight: '700', fontSize: 12, padding: 8, borderRadius: 8, marginBottom: 7, overflow: 'hidden' },
+  empty: { color: c.textFaint, fontSize: 12, paddingVertical: 9, textAlign: 'auto' },
+  add: { color: c.primary, padding: 9, fontWeight: '700', textAlign: 'auto' },
+}));

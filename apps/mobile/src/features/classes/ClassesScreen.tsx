@@ -1,76 +1,108 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Text } from 'react-native';
 import Button from '../../components/ui/Button';
-import NamePromptModal from '../../components/ui/NamePromptModal';
+import Card from '../../components/ui/Card';
+import ListRow from '../../components/ui/ListRow';
+import PromptModal from '../../components/ui/PromptModal';
 import Screen from '../../components/ui/Screen';
-import { dateKey, sameName } from '../../domain/schedule';
-import { useToast } from '../../hooks/useToast';
-import { usePlanner } from '../../state/PlannerProvider';
-import { colors } from '../../theme/colors';
-import { sharedStyles } from '../../theme/sharedStyles';
+import TextField from '../../components/ui/TextField';
+import { dateKey } from '../../domain/dates';
+import { SavedClass, Student } from '../../domain/types';
+import { useI18n } from '../../i18n/I18nProvider';
+import { useClasses, useLessons, usePlannerActions } from '../../state/planner';
+import { useSharedStyles } from '../../theme/sharedStyles';
+
+type StudentMatch = { student: Student; savedClass: SavedClass };
+
+const matches = (text: string, query: string) => text.toLocaleLowerCase().includes(query);
 
 export default function ClassesScreen() {
-  const planner = usePlanner();
+  const shared = useSharedStyles();
   const router = useRouter();
-  const toast = useToast();
+  const { t, tError } = useI18n();
+  const classes = useClasses();
+  const lessons = useLessons();
+  const actions = usePlannerActions();
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
 
   const upcomingByClass = useMemo(() => {
     const today = dateKey(new Date());
     const counts = new Map<string, number>();
-    for (const entry of planner.entries) {
-      if (entry.date >= today) counts.set(entry.classId, (counts.get(entry.classId) ?? 0) + 1);
+    for (const lesson of lessons) {
+      if (lesson.date >= today) counts.set(lesson.classId, (counts.get(lesson.classId) ?? 0) + 1);
     }
     return counts;
-  }, [planner.entries]);
+  }, [lessons]);
+
+  const search = query.trim().toLocaleLowerCase();
+  const visibleClasses = search ? classes.filter((item) => matches(item.name, search)) : classes;
+  const studentMatches = useMemo<StudentMatch[]>(() => (search
+    ? classes.flatMap((savedClass) => savedClass.students
+      .filter((student) => matches(student.name, search))
+      .map((student) => ({ student, savedClass })))
+    : []), [classes, search]);
+
+  const openClass = (id: string) => router.push({ pathname: '/class/[id]', params: { id } });
 
   return (
-    <Screen toastMessage={toast.message}>
-      <Button label="＋ New class" onPress={() => setCreating(true)} />
-      {planner.classes.map((item) => {
-        const upcoming = upcomingByClass.get(item.id) ?? 0;
-        return (
-          <Pressable
-            key={item.id}
-            style={styles.card}
-            onPress={() => router.push({ pathname: '/class/[id]', params: { id: item.id } })}
-            accessibilityRole="button"
-          >
-            <View style={styles.cardText}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.meta}>
-                {item.students.length} student{item.students.length === 1 ? '' : 's'} · {upcoming} upcoming class{upcoming === 1 ? '' : 'es'}
-              </Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        );
-      })}
-      {planner.classes.length === 0 && (
-        <Text style={sharedStyles.emptyText}>No classes yet. Create one here or while adding a class to your schedule.</Text>
+    <Screen>
+      <Button label={t('classes.newClass')} onPress={() => setCreating(true)} />
+      {classes.length > 0 && (
+        <TextField placeholder={t('classes.search')} value={query} onChangeText={setQuery} autoCorrect={false} clearButtonMode="while-editing" />
       )}
-      <NamePromptModal
+
+      {visibleClasses.length > 0 && (
+        <Card flush>
+          {visibleClasses.map((item, index) => {
+            const upcoming = upcomingByClass.get(item.id) ?? 0;
+            return (
+              <ListRow
+                key={item.id}
+                divider={index > 0}
+                title={item.name}
+                subtitle={`${t('classes.students', { count: item.students.length })} · ${t('classes.upcoming', { count: upcoming })}`}
+                onPress={() => openClass(item.id)}
+              />
+            );
+          })}
+        </Card>
+      )}
+
+      {studentMatches.length > 0 && (
+        <Card flush>
+          {studentMatches.map(({ student, savedClass }, index) => (
+            <ListRow
+              key={`${savedClass.id}:${student.id}`}
+              divider={index > 0}
+              title={student.name}
+              subtitle={t('classes.studentIn', { className: savedClass.name })}
+              onPress={() => router.push({ pathname: '/class/[id]/student/[studentId]', params: { id: savedClass.id, studentId: student.id } })}
+            />
+          ))}
+        </Card>
+      )}
+
+      {classes.length === 0 && <Text style={shared.emptyText}>{t('classes.empty')}</Text>}
+      {search !== '' && visibleClasses.length === 0 && studentMatches.length === 0 && (
+        <Text style={shared.emptyText}>{t('classes.noResults', { query: query.trim() })}</Text>
+      )}
+
+      <PromptModal
         visible={creating}
-        title="New class"
-        placeholder="Class name, e.g. 7B"
-        confirmLabel="Create"
-        onSubmit={(name) => {
-          if (!name.trim()) return 'Enter a class name first.';
-          if (planner.classes.some((item) => sameName(item.name, name))) return 'A class with this name already exists.';
-          planner.addClass(name);
-          return null;
+        title={t('classes.newClassTitle')}
+        confirmLabel={t('common.create')}
+        fields={[{ name: 'name', placeholder: t('classes.namePlaceholder') }]}
+        onSubmit={({ name }) => {
+          if (classes.some((item) => item.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase())) {
+            return tError({ code: 'classNameTaken' });
+          }
+          const result = actions.addClass({ name });
+          return result.ok ? null : tError(result.error);
         }}
         onClose={() => setCreating(false)}
       />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  card: { backgroundColor: colors.surface, borderRadius: 14, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.divider },
-  cardText: { flex: 1 },
-  name: { color: colors.navy, fontSize: 17, fontWeight: '800' },
-  meta: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
-  chevron: { color: colors.textFaint, fontSize: 28 },
-});

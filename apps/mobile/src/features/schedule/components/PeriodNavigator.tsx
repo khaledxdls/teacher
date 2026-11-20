@@ -1,59 +1,54 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../../../theme/colors';
+import { Pressable, Text, View } from 'react-native';
+import SegmentedControl from '../../../components/ui/SegmentedControl';
+import { useI18n } from '../../../i18n/I18nProvider';
+import { createStyles } from '../../../theme/createStyles';
 
 export type ScheduleView = 'week' | 'month';
-const VIEWS: { value: ScheduleView; label: string }[] = [
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-];
 
 type Props = {
   label: string;
+  /** Extra line under the period, e.g. "Week A". */
+  caption?: string | null;
   view: ScheduleView;
   onPrevious: () => void;
   onNext: () => void;
   onChangeView: (view: ScheduleView) => void;
 };
 
-export default function PeriodNavigator({ label, view, onPrevious, onNext, onChangeView }: Props) {
+export default function PeriodNavigator({ label, caption, view, onPrevious, onNext, onChangeView }: Props) {
+  const styles = useStyles();
+  const { t, isRTL } = useI18n();
+  // Arrows point in reading direction, so they swap in right-to-left layouts.
+  const [backArrow, forwardArrow] = isRTL ? ['›', '‹'] : ['‹', '›'];
   return (
     <>
       <View style={styles.toolbar}>
-        <Pressable onPress={onPrevious} accessibilityRole="button" accessibilityLabel={`Previous ${view}`} hitSlop={8}>
-          <Text style={styles.arrow}>‹</Text>
+        <Pressable onPress={onPrevious} accessibilityRole="button" hitSlop={8}
+          accessibilityLabel={t(view === 'week' ? 'schedule.previousWeek' : 'schedule.previousMonth')}>
+          <Text style={styles.arrow}>{backArrow}</Text>
         </Pressable>
-        <Text style={styles.period}>{label}</Text>
-        <Pressable onPress={onNext} accessibilityRole="button" accessibilityLabel={`Next ${view}`} hitSlop={8}>
-          <Text style={styles.arrow}>›</Text>
+        <View style={styles.center}>
+          <Text style={styles.period}>{label}</Text>
+          {caption ? <Text style={styles.caption}>{caption}</Text> : null}
+        </View>
+        <Pressable onPress={onNext} accessibilityRole="button" hitSlop={8}
+          accessibilityLabel={t(view === 'week' ? 'schedule.nextWeek' : 'schedule.nextMonth')}>
+          <Text style={styles.arrow}>{forwardArrow}</Text>
         </Pressable>
       </View>
-      <View style={styles.segmented} accessibilityRole="tablist">
-        {VIEWS.map((option) => {
-          const active = view === option.value;
-          return (
-            <Pressable
-              key={option.value}
-              style={[styles.segment, active && styles.segmentActive]}
-              onPress={() => onChangeView(option.value)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-            >
-              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{option.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <SegmentedControl
+        value={view}
+        onChange={onChangeView}
+        options={[{ value: 'week', label: t('schedule.week') }, { value: 'month', label: t('schedule.month') }]}
+      />
     </>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = createStyles((c) => ({
   toolbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  arrow: { fontSize: 36, color: colors.primary, paddingHorizontal: 10 },
-  period: { color: colors.navy, fontSize: 16, fontWeight: '700' },
-  segmented: { flexDirection: 'row', backgroundColor: colors.segmentTrack, borderRadius: 12, padding: 4, marginBottom: 18 },
-  segment: { flex: 1, alignItems: 'center', padding: 10, borderRadius: 9 },
-  segmentActive: { backgroundColor: colors.surface },
-  segmentText: { color: colors.textMuted, fontWeight: '700' },
-  segmentTextActive: { color: colors.navy },
-});
+  center: { alignItems: 'center', flex: 1 },
+  arrow: { fontSize: 36, color: c.primary, paddingHorizontal: 10 },
+  period: { color: c.text, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  caption: { color: c.primary, fontSize: 12, fontWeight: '800', marginTop: 2 },
+}));

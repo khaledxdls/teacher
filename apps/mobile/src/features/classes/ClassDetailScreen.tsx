@@ -1,118 +1,97 @@
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Text } from 'react-native';
 import Button from '../../components/ui/Button';
-import { confirmDestructive } from '../../components/ui/confirm';
-import NamePromptModal from '../../components/ui/NamePromptModal';
+import Card from '../../components/ui/Card';
+import InlineAddField from '../../components/ui/InlineAddField';
+import ListRow from '../../components/ui/ListRow';
+import PromptModal from '../../components/ui/PromptModal';
 import Screen from '../../components/ui/Screen';
-import { Student, studentAttendanceStats } from '../../domain/schedule';
+import { attendanceRate, studentAttendanceStats } from '../../domain/attendance';
+import { studentAverage } from '../../domain/grades';
+import { SavedClass } from '../../domain/types';
+import { useActionFeedback } from '../../hooks/useActionFeedback';
+import { useConfirm } from '../../hooks/useConfirm';
 import { useToast } from '../../hooks/useToast';
-import { usePlanner } from '../../state/PlannerProvider';
-import { colors } from '../../theme/colors';
-import { sharedStyles } from '../../theme/sharedStyles';
+import { useI18n } from '../../i18n/I18nProvider';
+import { useAssessments, useLessons, usePlannerActions } from '../../state/planner';
+import { useSharedStyles } from '../../theme/sharedStyles';
+import MissingClass from './MissingClass';
+import { useRouteClass } from './useRouteClass';
 
 export default function ClassDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const planner = usePlanner();
+  const { savedClass } = useRouteClass();
+  return savedClass ? <ClassDetail savedClass={savedClass} /> : <MissingClass />;
+}
+
+function ClassDetail({ savedClass }: { savedClass: SavedClass }) {
+  const shared = useSharedStyles();
   const router = useRouter();
+  const { t, tError } = useI18n();
+  const lessons = useLessons();
+  const assessments = useAssessments(savedClass.id);
+  const actions = usePlannerActions();
+  const confirm = useConfirm();
   const toast = useToast();
+  const feedback = useActionFeedback(toast.show);
   const [studentName, setStudentName] = useState('');
   const [renaming, setRenaming] = useState(false);
-
-  const savedClass = id ? planner.classById.get(id) : undefined;
-  const stats = useMemo(() => (id ? studentAttendanceStats(planner.entries, id) : new Map()), [planner.entries, id]);
-
-  if (!savedClass || savedClass.deleted) {
-    return (
-      <Screen>
-        <Stack.Screen options={{ title: 'Class' }} />
-        <Text style={sharedStyles.emptyText}>{planner.hydrated ? 'This class no longer exists.' : 'Loading…'}</Text>
-      </Screen>
-    );
-  }
+  const stats = useMemo(() => studentAttendanceStats(lessons, savedClass.id), [lessons, savedClass.id]);
+  const params = { id: savedClass.id };
 
   function addStudent() {
-    const error = planner.addStudent(savedClass!.id, studentName);
-    if (error) toast.show(error);
-    else setStudentName('');
-  }
-
-  function removeStudent(student: Student) {
-    confirmDestructive('Remove student?', `${student.name} will be removed from ${savedClass!.name}.`, 'Remove', () =>
-      planner.removeStudent(savedClass!.id, student.id));
+    if (feedback(actions.addStudent({ classId: savedClass.id, name: studentName }))) setStudentName('');
   }
 
   function deleteClass() {
-    confirmDestructive('Delete class?', `${savedClass!.name} and its student list will be deleted.`, 'Delete', () => {
-      const error = planner.deleteClass(savedClass!.id);
-      if (error) toast.show(error);
-      else router.back();
+    confirm(t('classDetail.deleteTitle'), t('classDetail.deleteMessage', { name: savedClass.name }), t('common.delete'), () => {
+      if (feedback(actions.deleteClass({ id: savedClass.id }))) router.back();
     });
+  }
+
+  function studentSummary(studentId: string) {
+    const record = stats.get(studentId);
+    const rate = record ? attendanceRate(record) : null;
+    const average = studentAverage(assessments, studentId);
+    return [
+      rate === null ? t('attendance.noneYet') : t('attendance.rate', { rate }),
+      average === null ? null : t('grades.studentAverage', { value: average }),
+    ].filter(Boolean).join(' · ');
   }
 
   return (
     <Screen toastMessage={toast.message}>
       <Stack.Screen options={{ title: savedClass.name }} />
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Students ({savedClass.students.length})</Text>
-        <View style={[sharedStyles.inlineAddRow, styles.addRow]}>
-          <TextInput
-            style={sharedStyles.inlineAddInput}
-            placeholder="Student name"
-            value={studentName}
-            onChangeText={setStudentName}
-            onSubmitEditing={addStudent}
-            returnKeyType="done"
+      <Card flush title={t('classDetail.students', { count: savedClass.students.length })}>
+        <InlineAddField value={studentName} onChange={setStudentName} onSubmit={addStudent} placeholder={t('classDetail.studentName')} />
+        {savedClass.students.map((student) => (
+          <ListRow
+            key={student.id}
+            divider
+            title={student.name}
+            subtitle={studentSummary(student.id)}
+            onPress={() => router.push({ pathname: '/class/[id]/student/[studentId]', params: { ...params, studentId: student.id } })}
           />
-          <Pressable style={sharedStyles.inlineAddButton} onPress={addStudent} accessibilityRole="button">
-            <Text style={sharedStyles.inlineAddText}>Add</Text>
-          </Pressable>
-        </View>
-        {savedClass.students.map((student) => {
-          const record = stats.get(student.id);
-          const rate = record?.marked ? Math.round(((record.present + record.late) / record.marked) * 100) : null;
-          return (
-            <View key={student.id} style={styles.studentRow}>
-              <View style={styles.studentText}>
-                <Text style={styles.studentName}>{student.name}</Text>
-                <Text style={styles.studentMeta}>
-                  {record
-                    ? `${rate}% attendance · ${record.present} present, ${record.late} late, ${record.absent} absent`
-                    : 'No attendance recorded yet'}
-                </Text>
-              </View>
-              <Pressable onPress={() => removeStudent(student)} accessibilityRole="button" accessibilityLabel={`Remove ${student.name}`} hitSlop={8}>
-                <Text style={styles.remove}>Remove</Text>
-              </Pressable>
-            </View>
-          );
-        })}
-        {savedClass.students.length === 0 && <Text style={sharedStyles.emptyText}>No students added yet.</Text>}
-      </View>
+        ))}
+        {savedClass.students.length === 0 && <Text style={shared.emptyText}>{t('classDetail.noStudents')}</Text>}
+      </Card>
 
-      <Button label="Rename class" variant="secondary" onPress={() => setRenaming(true)} />
-      <Button label="Delete class" variant="danger" onPress={deleteClass} />
+      <Button label={t('classDetail.gradebook')} variant="secondary" onPress={() => router.push({ pathname: '/class/[id]/grades', params })} />
+      <Button label={t('classDetail.report')} variant="secondary" onPress={() => router.push({ pathname: '/class/[id]/report', params })} />
+      <Button label={t('classDetail.rename')} variant="outline" onPress={() => setRenaming(true)} />
+      <Button label={t('classDetail.delete')} variant="danger" onPress={deleteClass} />
 
-      <NamePromptModal
+      <PromptModal
         visible={renaming}
-        title="Rename class"
-        placeholder="Class name"
-        initialValue={savedClass.name}
-        onSubmit={(name) => planner.renameClass(savedClass.id, name)}
+        title={t('classDetail.renameTitle')}
+        fields={[{ name: 'name', placeholder: t('classes.namePlaceholder'), initialValue: savedClass.name }]}
+        onSubmit={({ name }) => {
+          const result = actions.renameClass({ id: savedClass.id, name });
+          return result.ok ? null : tError(result.error);
+        }}
         onClose={() => setRenaming(false)}
       />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  section: { backgroundColor: colors.surface, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: colors.divider },
-  sectionTitle: { color: colors.navy, fontWeight: '800', fontSize: 16, padding: 16, paddingBottom: 10 },
-  addRow: { marginHorizontal: 0 },
-  studentRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.divider },
-  studentText: { flex: 1, marginRight: 12 },
-  studentName: { color: colors.navy, fontSize: 15, fontWeight: '600' },
-  studentMeta: { color: colors.textSubtle, fontSize: 12, marginTop: 3 },
-  remove: { color: colors.danger, fontSize: 12, fontWeight: '700' },
-});

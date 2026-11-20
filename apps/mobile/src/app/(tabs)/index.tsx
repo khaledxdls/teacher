@@ -1,1 +1,1 @@
-export { default } from '../../features/schedule/ScheduleScreen';
+export { default } from '../../features/today/TodayScreen';
