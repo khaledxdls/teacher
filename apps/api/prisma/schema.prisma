@@ -8,18 +8,21 @@ datasource db {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String?
-  passwordHash String
+  id             String          @id @default(cuid())
+  email          String          @unique
+  name           String?
+  passwordHash   String
   /// Incremented once per sync that writes changes; every written record gets the new value.
-  syncVersion  Int          @default(0)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  records      SyncRecord[]
+  syncVersion    Int             @default(0)
+  /// Incremented when the password changes; tokens carrying an older version are rejected.
+  tokenVersion   Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  records        SyncRecord[]
+  passwordResets PasswordReset[]
 }
 
-/// One planner record (entry, class or template) belonging to a user, stored as JSON.
+/// One planner record belonging to a user, stored as JSON.
 /// Merged with last-write-wins on the client-supplied `clientUpdatedAt`.
 model SyncRecord {
   userId          String
@@ -34,4 +37,18 @@ model SyncRecord {
 
   @@id([userId, collection, id])
   @@index([userId, version])
+}
+
+/// A one-time code emailed to reset a forgotten password. Only a hash of the code is stored.
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

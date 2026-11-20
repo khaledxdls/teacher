@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/lib/prisma.js';
-import { change, createUser, resetDatabase, sync } from './helpers.js';
+import { api, bearer, change, createUser, resetDatabase, sync } from './helpers.js';
 
 beforeEach(resetDatabase);
 afterAll(() => prisma.$disconnect());
@@ -8,6 +8,13 @@ afterAll(() => prisma.$disconnect());
 describe('POST /sync', () => {
   it('requires authentication', async () => {
     await sync('invalid', 0).expect(401);
+  });
+
+  it('accepts every planner collection', async () => {
+    const { token } = await createUser();
+    const collections = ['entry', 'class', 'template', 'assessment', 'event', 'setting'] as const;
+    const response = await sync(token, 0, collections.map((collection) => change({ id: collection, collection }))).expect(200);
+    expect(response.body.changes).toHaveLength(collections.length);
   });
 
   it('returns nothing for a new account', async () => {
@@ -113,7 +120,6 @@ describe('POST /sync', () => {
     ['too many changes', { cursor: 0, changes: Array.from({ length: 501 }, (_, index) => change({ id: `c${index}` })) }],
   ])('rejects %s', async (_, body) => {
     const { token } = await createUser();
-    const { api } = await import('./helpers.js');
-    await api().post('/sync').set('Authorization', `Bearer ${token}`).send(body).expect(400);
+    await api().post('/sync').set(bearer(token)).send(body).expect(400);
   });
 });

@@ -1,55 +1,57 @@
 import { Router } from 'express';
-import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { config } from '../config.js';
-import { AuthedRequest, HttpError, parseBody, requireAuth } from '../lib/http.js';
-import { hashPassword, verifyPassword } from '../lib/password.js';
-import { prisma } from '../lib/prisma.js';
-import { signToken } from '../lib/tokens.js';
+import { limit, parseBody, requireAuth, userIdOf } from '../lib/http.js';
+import type { Mailer } from '../lib/mailer.js';
+import * as accounts from '../services/accounts.js';
 
-const credentials = z.object({
-  email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
-  password: z.string().min(8, 'must be at least 8 characters').max(200),
-});
-const registration = credentials.extend({ name: z.string().trim().max(100).optional() });
+const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
+const password = z.string().min(8, 'must be at least 8 characters').max(200);
+const anyPassword = z.string().min(1).max(200);
 
-type PublicUser = { id: string; email: string; name: string | null };
-const publicUser = ({ id, email, name }: PublicUser): PublicUser => ({ id, email, name });
+const schemas = {
+  register: z.object({ email, password, name: z.string().trim().max(100).optional() }),
+  login: z.object({ email, password: anyPassword }),
+  changePassword: z.object({ currentPassword: anyPassword, newPassword: password }),
+  forgotPassword: z.object({ email }),
+  resetPassword: z.object({ email, code: z.string().trim().regex(/^\d{6}$/, 'must be 6 digits'), newPassword: password }),
+  deleteAccount: z.object({ password: anyPassword }),
+};
 
-export const authRouter = Router();
+export function createAuthRouter({ mailer }: { mailer: Mailer }) {
+  const router = Router();
+  const signInLimit = limit(20);
+  const resetLimit = limit(5);
 
-// Slow down password guessing. Disabled in tests so suites can create many accounts.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-  skip: () => config.isTest,
-  message: { error: 'Too many attempts. Try again in a few minutes.' },
-});
-
-authRouter.post('/register', authLimiter, async (request, response) => {
-  const input = parseBody(registration, request.body);
-  const existing = await prisma.user.findUnique({ where: { email: input.email } });
-  if (existing) throw new HttpError(409, 'An account with this email already exists.');
-  const user = await prisma.user.create({
-    data: { email: input.email, name: input.name || null, passwordHash: await hashPassword(input.password) },
+  router.post('/register', signInLimit, async (request, response) => {
+    response.status(201).json(await accounts.register(parseBody(schemas.register, request.body)));
   });
-  response.status(201).json({ token: signToken(user.id), user: publicUser(user) });
-});
 
-authRouter.post('/login', authLimiter, async (request, response) => {
-  const input = parseBody(credentials, request.body);
-  const user = await prisma.user.findUnique({ where: { email: input.email } });
-  // Same message for unknown email and wrong password so accounts cannot be enumerated.
-  if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
-    throw new HttpError(401, 'Email or password is incorrect.');
-  }
-  response.json({ token: signToken(user.id), user: publicUser(user) });
-});
+  router.post('/login', signInLimit, async (request, response) => {
+    response.json(await accounts.login(parseBody(schemas.login, request.body)));
+  });
 
-authRouter.get('/me', requireAuth, async (request, response) => {
-  const user = await prisma.user.findUnique({ where: { id: (request as AuthedRequest).userId } });
-  if (!user) throw new HttpError(401, 'Sign in again to continue.');
-  response.json({ user: publicUser(user) });
-});
+  router.get('/me', requireAuth, async (request, response) => {
+    response.json({ user: await accounts.getUser(userIdOf(request)) });
+  });
+
+  router.delete('/me', requireAuth, async (request, response) => {
+    const { password: current } = parseBody(schemas.deleteAccount, request.body);
+    await accounts.deleteAccount(userIdOf(request), current);
+    response.status(204).end();
+  });
+
+  router.post('/password', requireAuth, async (request, response) => {
+    response.json(await accounts.changePassword(userIdOf(request), parseBody(schemas.changePassword, request.body)));
+  });
+
+  router.post('/password/forgot', resetLimit, async (request, response) => {
+    await accounts.requestPasswordReset(mailer, parseBody(schemas.forgotPassword, request.body).email);
+    response.status(202).json({ message: 'If an account exists for this email, a reset code is on its way.' });
+  });
+
+  router.post('/password/reset', resetLimit, async (request, response) => {
+    response.json(await accounts.resetPassword(parseBody(schemas.resetPassword, request.body)));
+  });
+
+  return router;
+}
