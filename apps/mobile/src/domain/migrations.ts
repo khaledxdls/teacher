@@ -1,4 +1,5 @@
-import { createId, PlannerState, SavedClass, sameName } from './schedule';
+import { createId, sameName } from './records';
+import { emptyPlannerState, PlannerState, SavedClass } from './types';
 
 /** Shapes stored by the first version of the app (keys ending in `-v1`). */
 export type LegacyEntry = {
@@ -15,17 +16,16 @@ export type LegacyData = { entries: LegacyEntry[]; templates: LegacyTemplate[]; 
 /**
  * Converts v1 data to the current model:
  * - classes are de-duplicated by name and every class name used anywhere gets a class,
- * - entries and template entries reference classes by id instead of by name,
+ * - lessons and template lessons reference classes by id instead of by name,
  * - templates saved before the off-by-one fix (no `version: 2`) get 0-based days,
  * - every record gets sync metadata and is marked dirty so it is uploaded on first sync.
  */
 export function migrateFromV1(legacy: LegacyData, now: number): PlannerState {
   const classes: SavedClass[] = [];
   const usedIds = new Set<string>();
-  const findClass = (name: string) => classes.find((item) => sameName(item.name, name));
   const ensureClass = (name: string, id?: string, students: LegacyClass['students'] = []) => {
     const trimmed = name.trim();
-    const existing = findClass(trimmed);
+    const existing = classes.find((item) => sameName(item.name, trimmed));
     if (existing) return existing;
     const classId = id && !usedIds.has(id) ? id : createId();
     usedIds.add(classId);
@@ -56,5 +56,11 @@ export function migrateFromV1(legacy: LegacyData, now: number): PlannerState {
       })),
   }));
 
-  return { entries, classes, templates };
+  return { ...emptyPlannerState, entries, classes, templates };
 }
+
+/** Fills collections added after a state was saved (older v2 data has no grades or calendar). */
+export const normalizeState = (state: Partial<PlannerState>): PlannerState => ({
+  ...emptyPlannerState,
+  ...Object.fromEntries(Object.entries(state).filter(([, value]) => Array.isArray(value))),
+});

@@ -1,4 +1,5 @@
-import { LegacyData, migrateFromV1 } from '../migrations';
+import { LegacyData, migrateFromV1, normalizeState } from '../migrations';
+import { emptyPlannerState } from '../types';
 
 const NOW = 1_700_000_000_000;
 
@@ -8,7 +9,7 @@ const legacyEntry = (id: string, className: string, date = '2026-11-13') =>
 
 describe('migrateFromV1', () => {
   it('returns an empty state for a fresh install', () => {
-    expect(migrateFromV1(legacy(), NOW)).toEqual({ entries: [], classes: [], templates: [] });
+    expect(migrateFromV1(legacy(), NOW)).toEqual(emptyPlannerState);
   });
 
   it('links entries to classes by id and keeps students', () => {
@@ -61,5 +62,12 @@ describe('migrateFromV1', () => {
   it('drops entries without a class name', () => {
     const state = migrateFromV1(legacy({ entries: [legacyEntry('e1', '')] }), NOW);
     expect(state.entries).toEqual([]);
+  });
+});
+
+describe('normalizeState', () => {
+  it('adds collections missing from older saved states and drops invalid ones', () => {
+    const entries = [{ id: 'e', date: '2026-11-13', startTime: '09:00', endTime: '10:00', subject: 'M', classId: 'c', room: '', updatedAt: 1 }];
+    expect(normalizeState({ entries, assessments: 'broken' as never })).toEqual({ ...emptyPlannerState, entries });
   });
 });

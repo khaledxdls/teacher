@@ -1,5 +1,5 @@
-import { emptyPlannerState, PlannerState, SavedClass, ScheduleEntry } from '../schedule';
-import { applyRemote, collectDirty, markAllDirty, markPushed, SyncRecord } from '../sync';
+import { emptyPlannerState, PlannerState, SavedClass, ScheduleEntry } from '../types';
+import { applyRemote, collectDirty, countDirty, markAllDirty, markPushed, SyncRecord } from '../sync';
 
 const cls = (id: string, updatedAt: number, extra: Partial<SavedClass> = {}): SavedClass =>
   ({ id, name: `Class ${id}`, students: [], updatedAt, ...extra });
@@ -59,15 +59,28 @@ describe('applyRemote', () => {
     const next = applyRemote(emptyPlannerState, [
       remote('e1', 1, { collection: 'entry', data: { id: 'e1', subject: 'Math' } }),
       remote('t1', 1, { collection: 'template', data: { id: 't1', name: 'T', entries: [] } }),
+      remote('q1', 1, { collection: 'assessment', data: { id: 'q1', title: 'Quiz' } }),
+      remote('h1', 1, { collection: 'event', data: { id: 'h1', title: 'Break' } }),
+      remote('calendar', 1, { collection: 'setting', data: { id: 'calendar', rotation: { enabled: true, anchorWeek: null } } }),
+      remote('x', 1, { collection: 'unknown' as never }),
     ]);
     expect(next.entries.map((item) => item.id)).toEqual(['e1']);
     expect(next.templates.map((item) => item.id)).toEqual(['t1']);
+    expect(next.assessments.map((item) => item.id)).toEqual(['q1']);
+    expect(next.events.map((item) => item.id)).toEqual(['h1']);
+    expect(next.settings.map((item) => item.id)).toEqual(['calendar']);
   });
 
   it('returns the same object when nothing changed', () => {
     const local = state({ classes: [cls('c1', 5)] });
     expect(applyRemote(local, [remote('c1', 5)])).toBe(local);
     expect(applyRemote(local, [])).toBe(local);
+  });
+});
+
+describe('countDirty', () => {
+  it('counts dirty records across all collections', () => {
+    expect(countDirty(state({ classes: [cls('c1', 1, { dirty: true })], entries: [entry('e1', 1, { dirty: true }), entry('e2', 1)] }))).toBe(2);
   });
 });
 
