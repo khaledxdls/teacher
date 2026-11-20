@@ -13,13 +13,17 @@ export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
   }
+
+  get isNetworkError() {
+    return this.status === 0;
+  }
 }
 
 export type User = { id: string; email: string; name: string | null };
 export type AuthResponse = { token: string; user: User };
 export type SyncResponse = { cursor: number; changes: SyncRecord[] };
 
-type RequestOptions = { method?: 'GET' | 'POST'; body?: unknown; token?: string };
+type RequestOptions = { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown; token?: string };
 
 async function apiRequest<T>(path: string, { method = 'GET', body, token }: RequestOptions = {}): Promise<T> {
   const controller = new AbortController();
@@ -37,20 +41,27 @@ async function apiRequest<T>(path: string, { method = 'GET', body, token }: Requ
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new ApiError(0, `Can't reach the server at ${API_URL}. Check your connection.`);
+    throw new ApiError(0, `Can't reach the server at ${API_URL}.`);
   } finally {
     clearTimeout(timeout);
   }
+  if (response.status === 204) return undefined as T;
   const payload = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) throw new ApiError(response.status, payload.error ?? `Request failed (${response.status}).`);
   return payload as T;
 }
 
-export const login = (email: string, password: string) =>
-  apiRequest<AuthResponse>('/auth/login', { method: 'POST', body: { email, password } });
+const post = <T>(path: string, body: unknown, token?: string) => apiRequest<T>(path, { method: 'POST', body, token });
 
-export const register = (email: string, password: string, name?: string) =>
-  apiRequest<AuthResponse>('/auth/register', { method: 'POST', body: { email, password, name: name || undefined } });
-
-export const syncChanges = (token: string, cursor: number, changes: SyncRecord[]) =>
-  apiRequest<SyncResponse>('/sync', { method: 'POST', token, body: { cursor, changes } });
+export const api = {
+  login: (email: string, password: string) => post<AuthResponse>('/auth/login', { email, password }),
+  register: (email: string, password: string, name?: string) =>
+    post<AuthResponse>('/auth/register', { email, password, name: name || undefined }),
+  changePassword: (token: string, currentPassword: string, newPassword: string) =>
+    post<AuthResponse>('/auth/password', { currentPassword, newPassword }, token),
+  requestPasswordReset: (email: string) => post<{ message: string }>('/auth/password/forgot', { email }),
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    post<AuthResponse>('/auth/password/reset', { email, code, newPassword }),
+  deleteAccount: (token: string, password: string) => apiRequest<void>('/auth/me', { method: 'DELETE', token, body: { password } }),
+  sync: (token: string, cursor: number, changes: SyncRecord[]) => post<SyncResponse>('/sync', { cursor, changes }, token),
+};

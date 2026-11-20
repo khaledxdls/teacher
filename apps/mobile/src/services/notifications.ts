@@ -1,8 +1,11 @@
 import * as Notifications from 'expo-notifications';
-import { parseDateKey, ScheduleEntry, sortEntries, timeToMinutes } from '../domain/schedule';
+import { dateTimeOf } from '../domain/dates';
+import { sortEntries } from '../domain/schedule';
+import { DateKey, TimeOfDay } from '../domain/types';
 
-/** What a class reminder needs: the entry plus its class name, resolved by the caller. */
-export type ClassReminder = Pick<ScheduleEntry, 'id' | 'date' | 'startTime' | 'subject' | 'room'> & { className: string };
+/** A lesson reminder with its (already translated) text. */
+export type ClassReminder = { id: string; date: DateKey; startTime: TimeOfDay; title: string; body: string };
+export type NotificationText = { title: string; body: string };
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -42,7 +45,7 @@ async function cancelByKind(kind: string) {
   );
 }
 
-export const scheduleWeeklyReminder = (enabled: boolean) => serialize(async () => {
+export const scheduleWeeklyReminder = (enabled: boolean, text: NotificationText) => serialize(async () => {
   await cancelByKind('weekly-reminder');
   if (!enabled) return;
   const now = new Date();
@@ -57,19 +60,15 @@ export const scheduleWeeklyReminder = (enabled: boolean) => serialize(async () =
     const date = new Date(nextFriday);
     date.setDate(nextFriday.getDate() + index * 7);
     return Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Plan your teaching week',
-        body: 'Add or review the classes you teach this week.',
-        data: { kind: 'weekly-reminder' },
-      },
+      content: { ...text, data: { kind: 'weekly-reminder' } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
     });
   }));
 });
 
-const reminderTime = (entry: ClassReminder) => {
-  const date = parseDateKey(entry.date);
-  date.setMinutes(timeToMinutes(entry.startTime) - CLASS_REMINDER_LEAD_MINUTES);
+const reminderTime = (reminder: ClassReminder) => {
+  const date = dateTimeOf(reminder.date, reminder.startTime);
+  date.setMinutes(date.getMinutes() - CLASS_REMINDER_LEAD_MINUTES);
   return date;
 };
 
@@ -83,11 +82,7 @@ export const scheduleClassReminders = (entries: ClassReminder[]) => serialize(as
     .slice(0, MAX_CLASS_REMINDERS);
 
   await Promise.all(upcoming.map(({ entry, date }) => Notifications.scheduleNotificationAsync({
-    content: {
-      title: `${entry.subject} starts soon`,
-      body: `${entry.className}${entry.room ? ` · Room ${entry.room}` : ''}`,
-      data: { kind: 'class-reminder', entryId: entry.id },
-    },
+    content: { title: entry.title, body: entry.body, data: { kind: 'class-reminder', entryId: entry.id } },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
   })));
 });

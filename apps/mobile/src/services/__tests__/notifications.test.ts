@@ -32,7 +32,8 @@ jest.mock('expo-notifications', () => ({
 const NOW = new Date(2026, 10, 19, 8, 0);
 const ofKind = (kind: string) => [...mockPending.values()].filter((item) => item.content.data.kind === kind);
 const entry = (id: string, date: string, startTime = '09:00'): ClassReminder =>
-  ({ id, date, startTime, subject: 'Math', className: '7B', room: '12' });
+  ({ id, date, startTime, title: 'Math starts soon', body: '7B · Room 12' });
+const WEEKLY = { title: 'Plan your week', body: 'Review your lessons.' };
 
 describe('notifications', () => {
   beforeEach(() => {
@@ -65,7 +66,7 @@ describe('notifications', () => {
 
   it('caps class reminders to stay under the iOS limit of 64 alongside weekly reminders', async () => {
     const many = Array.from({ length: 100 }, (_, index) => entry(`e${index}`, `2026-12-${String((index % 28) + 1).padStart(2, '0')}`, `${String(8 + Math.floor(index / 28)).padStart(2, '0')}:00`));
-    await scheduleWeeklyReminder(true);
+    await scheduleWeeklyReminder(true, WEEKLY);
     await scheduleClassReminders(many);
     expect(ofKind('class-reminder')).toHaveLength(40);
     expect(mockPending.size).toBeLessThanOrEqual(64);
@@ -84,9 +85,10 @@ describe('notifications', () => {
 
   it('keeps class and weekly reminders independent', async () => {
     await scheduleClassReminders([entry('a', '2026-11-20')]);
-    await scheduleWeeklyReminder(true);
+    await scheduleWeeklyReminder(true, WEEKLY);
     expect(ofKind('weekly-reminder')).toHaveLength(12);
-    await scheduleWeeklyReminder(false);
+    expect(ofKind('weekly-reminder')[0].content).toMatchObject(WEEKLY);
+    await scheduleWeeklyReminder(false, WEEKLY);
     expect(ofKind('weekly-reminder')).toHaveLength(0);
     expect(ofKind('class-reminder')).toHaveLength(1);
     expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledTimes(12);
