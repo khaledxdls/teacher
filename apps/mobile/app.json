@@ -5,9 +5,10 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.teacherplanner.mobile"
     },
     "android": {
       "package": "com.teacherplanner.mobile",
@@ -24,7 +25,19 @@
       "@react-native-community/datetimepicker",
       "expo-status-bar",
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-sharing",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": true,
+          "supportedLocales": [
+            "en",
+            "fr",
+            "ar"
+          ]
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
