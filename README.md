@@ -94,7 +94,7 @@ Authenticated routes take `Authorization: Bearer <token>`.
 
 **API.** `apps/api/Dockerfile` builds a production image (run from the repo root); it applies migrations on start. `render.yaml` is a Render Blueprint that creates the service and a PostgreSQL database and generates `JWT_SECRET`. Set `RESEND_API_KEY` and `MAIL_FROM` for real password-reset emails and `SENTRY_DSN` for monitoring (it also receives the app's error reports).
 
-**App.** `apps/mobile/eas.json` defines `preview` (installable APK / ad-hoc build for testers) and `production` profiles. Set `EXPO_PUBLIC_API_URL` as an EAS environment variable for each environment, then:
+**App.** `apps/mobile/eas.json` defines `preview` (installable APK / ad-hoc build for testers) and `production` profiles; both point `EXPO_PUBLIC_API_URL` at the deployed API (`https://classpilot-api-9bm3.onrender.com`). Build with:
 
 ```powershell
 cd apps/mobile

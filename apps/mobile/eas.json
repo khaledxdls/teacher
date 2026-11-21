@@ -9,11 +9,17 @@
       "environment": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://classpilot-api-9bm3.onrender.com"
       }
     },
     "production": {
       "environment": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://classpilot-api-9bm3.onrender.com"
+      }
     }
   },
   "submit": {
