@@ -42,6 +42,12 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "classpilot"
+    "scheme": "classpilot",
+    "owner": "khaledxdls",
+    "extra": {
+      "eas": {
+        "projectId": "f3fee8ea-bca1-46ff-9433-bb86e93e7326"
+      }
+    }
   }
 }
