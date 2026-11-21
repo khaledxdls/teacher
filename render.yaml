@@ -1,14 +1,17 @@
 # Render Blueprint: https://render.com/docs/blueprint-spec
 # Creates the API (Docker) and a managed PostgreSQL database.
+# Free plans: the service sleeps after 15 minutes idle and the free database expires
+# after 30 days. Upgrade both in the Render dashboard before relying on them.
 databases:
   - name: classpilot-db
-    plan: basic-256mb
+    plan: free
     databaseName: classpilot
 
 services:
   - type: web
     name: classpilot-api
     runtime: docker
+    plan: free
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
     healthCheckPath: /health
