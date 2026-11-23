@@ -4,13 +4,13 @@ import { Text, TextInput, View } from 'react-native';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Screen from '../../components/ui/Screen';
-import { assessmentAverage, gradedCount, parseScore } from '../../domain/grades';
+import { assessmentAverage, gradedCount, parseScore, ScoreIndex, scoreOf } from '../../domain/grades';
 import { Assessment, SavedClass, Student } from '../../domain/types';
 import { useActionFeedback } from '../../hooks/useActionFeedback';
 import { useConfirm } from '../../hooks/useConfirm';
 import { useToast } from '../../hooks/useToast';
 import { useI18n } from '../../i18n/I18nProvider';
-import { useAssessments, usePlannerActions } from '../../state/planner';
+import { useAssessments, usePlannerActions, useScoreIndex, useStudents } from '../../state/planner';
 import { createStyles } from '../../theme/createStyles';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSharedStyles } from '../../theme/sharedStyles';
@@ -37,7 +37,9 @@ function AssessmentDetail({ savedClass, assessment }: { savedClass: SavedClass; 
   const toast = useToast();
   const feedback = useActionFeedback(toast.show);
   const [editing, setEditing] = useState(false);
-  const average = assessmentAverage(assessment, savedClass.students);
+  const students = useStudents(savedClass.id);
+  const scores = useScoreIndex();
+  const average = assessmentAverage(assessment, scores, students);
 
   function remove() {
     confirm(t('grades.deleteTitle'), t('grades.deleteMessage', { title: assessment.title }), t('common.delete'), () => {
@@ -51,17 +53,17 @@ function AssessmentDetail({ savedClass, assessment }: { savedClass: SavedClass; 
       <Card>
         <Text style={shared.title}>{formatDate(assessment.date, 'full')}</Text>
         <Text style={shared.subtitle}>
-          {t('grades.graded', { count: gradedCount(assessment, savedClass.students), total: savedClass.students.length })}
+          {t('grades.graded', { count: gradedCount(assessment, scores, students), total: students.length })}
           {' · '}
           {average === null ? t('grades.noScores') : t('grades.classAverage', { value: average })}
         </Text>
       </Card>
 
       <Card flush>
-        {savedClass.students.map((student, index) => (
-          <ScoreRow key={student.id} student={student} assessment={assessment} divider={index > 0} onError={toast.show} />
+        {students.map((student, index) => (
+          <ScoreRow key={student.id} student={student} assessment={assessment} scores={scores} divider={index > 0} onError={toast.show} />
         ))}
-        {savedClass.students.length === 0 && <Text style={shared.emptyText}>{t('classDetail.noStudents')}</Text>}
+        {students.length === 0 && <Text style={shared.emptyText}>{t('classDetail.noStudents')}</Text>}
       </Card>
 
       <Button label={t('grades.editDetails')} variant="outline" onPress={() => setEditing(true)} />
@@ -71,15 +73,15 @@ function AssessmentDetail({ savedClass, assessment }: { savedClass: SavedClass; 
   );
 }
 
-type ScoreRowProps = { student: Student; assessment: Assessment; divider: boolean; onError: (message: string) => void };
+type ScoreRowProps = { student: Student; assessment: Assessment; scores: ScoreIndex; divider: boolean; onError: (message: string) => void };
 
 /** One student's score; saved when the field loses focus or the user presses return. */
-function ScoreRow({ student, assessment, divider, onError }: ScoreRowProps) {
+function ScoreRow({ student, assessment, scores, divider, onError }: ScoreRowProps) {
   const styles = useStyles();
   const { palette } = useTheme();
   const { t, tError } = useI18n();
   const actions = usePlannerActions();
-  const stored = assessment.scores[student.id];
+  const stored = scoreOf(scores, assessment.id, student.id);
   const [text, setText] = useState(stored === undefined ? '' : String(stored));
 
   function commit() {

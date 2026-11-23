@@ -17,6 +17,7 @@ import { createStyles } from '../../theme/createStyles';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSharedStyles } from '../../theme/sharedStyles';
 import AccountCard from './AccountCard';
+import DataCard from './DataCard';
 import SignInCard from './SignInCard';
 
 export default function SettingsScreen() {
@@ -73,6 +74,8 @@ export default function SettingsScreen() {
         </View>
         <Text style={shared.hint}>{t('settings.lessonReminderHint')}</Text>
       </Card>
+
+      <DataCard onMessage={toast.show} />
 
       <Card flush>
         <ListRow title={t('settings.calendar')} subtitle={t('settings.calendarHint')} onPress={() => router.push('/calendar')} />

@@ -30,10 +30,11 @@ describe('storage', () => {
         { id: 'e1', date: '2026-11-13', startTime: '09:00', endTime: '10:00', subject: 'Math', className: '7B', room: '' },
       ]);
       await AsyncStorage.setItem('teacher-schedule-v1', legacyEntries);
-      await AsyncStorage.setItem('teacher-classes-v1', JSON.stringify([{ id: 'k1', name: '7B', students: [] }]));
+      await AsyncStorage.setItem('teacher-classes-v1', JSON.stringify([{ id: 'k1', name: '7B', students: [{ id: 's1', name: 'Ana' }] }]));
 
       const first = await loadPlannerState();
       expect(first.entries[0]).toMatchObject({ id: 'e1', classId: 'k1', dirty: true });
+      expect(first.students).toEqual([expect.objectContaining({ id: 's1', classId: 'k1' })]);
       expect(await AsyncStorage.getItem('classpilot-schema')).toBe('2');
       expect(await AsyncStorage.getItem('teacher-schedule-v1')).toBe(legacyEntries);
 
@@ -42,7 +43,7 @@ describe('storage', () => {
       await expect(loadPlannerState()).resolves.toEqual(first);
     });
 
-    it('round-trips every collection and fills collections missing from older saves', async () => {
+    it('round-trips every collection and fills collections missing from older saves (raw, not upgraded)', async () => {
       await AsyncStorage.setItem('classpilot-schema', '2');
       const events = [{ id: 'h', title: 'Break', kind: 'holiday' as const, startDate: '2026-12-20', endDate: '2027-01-03', updatedAt: 1 }];
       await saveCollection('events', events);
@@ -66,8 +67,8 @@ describe('storage', () => {
       await AsyncStorage.setItem('teacher-weekly-reminder-v1', 'false');
       await expect(loadPreferences()).resolves.toEqual({ ...defaultPreferences, weeklyReminder: false });
 
-      await savePreferences({ weeklyReminder: true, theme: 'dark', language: 'ar' });
-      await expect(loadPreferences()).resolves.toEqual({ weeklyReminder: true, theme: 'dark', language: 'ar' });
+      await savePreferences({ weeklyReminder: true, theme: 'dark', language: 'ar', onboardingDone: true });
+      await expect(loadPreferences()).resolves.toEqual({ weeklyReminder: true, theme: 'dark', language: 'ar', onboardingDone: true });
     });
   });
 

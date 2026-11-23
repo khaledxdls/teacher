@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LegacyClass, LegacyEntry, LegacyTemplate, migrateFromV1, normalizeState } from '../domain/migrations';
-import { PlannerState } from '../domain/types';
+import { LegacyClass, LegacyEntry, LegacyTemplate, migrateFromV1 } from '../domain/migrations';
+import { emptyPlannerState, PlannerState } from '../domain/types';
 
 /** v1 keys are only read for migration and are left untouched as a backup. */
 const legacyKeys = {
@@ -17,8 +17,13 @@ const SCHEMA_VERSION = '2';
 const collectionKeys: Record<keyof PlannerState, string> = {
   entries: 'classpilot-entries-v2',
   classes: 'classpilot-classes-v2',
+  students: 'classpilot-students-v2',
   templates: 'classpilot-templates-v2',
   assessments: 'classpilot-assessments-v2',
+  scores: 'classpilot-scores-v2',
+  attendance: 'classpilot-attendance-v2',
+  homework: 'classpilot-homework-v2',
+  behavior: 'classpilot-behavior-v2',
   events: 'classpilot-events-v2',
   settings: 'classpilot-settings-v2',
 };
@@ -59,10 +64,14 @@ async function loadLegacyAndMigrate(): Promise<PlannerState> {
   return state;
 }
 
+/**
+ * Reads planner data as stored (v1 data is migrated first). Records may still use older
+ * embedded shapes; callers run `upgradeEmbeddedRecords` and persist the result.
+ */
 export async function loadPlannerState(): Promise<PlannerState> {
   if ((await AsyncStorage.getItem(SCHEMA_KEY)) !== SCHEMA_VERSION) return loadLegacyAndMigrate();
   const values = await Promise.all(collectionNames.map((name) => AsyncStorage.getItem(collectionKeys[name])));
-  return normalizeState(Object.fromEntries(collectionNames.map((name, index) => [name, readArray(collectionKeys[name], values[index])])));
+  return { ...emptyPlannerState, ...Object.fromEntries(collectionNames.map((name, index) => [name, readArray(collectionKeys[name], values[index])])) };
 }
 
 export const saveCollection = <K extends keyof PlannerState>(name: K, records: PlannerState[K]) =>
@@ -71,8 +80,14 @@ export const saveCollection = <K extends keyof PlannerState>(name: K, records: P
 /** Device-local settings; never synced. */
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type LanguagePreference = 'system' | 'en' | 'fr' | 'ar';
-export type Preferences = { weeklyReminder: boolean; theme: ThemePreference; language: LanguagePreference };
-export const defaultPreferences: Preferences = { weeklyReminder: true, theme: 'system', language: 'system' };
+export type Preferences = {
+  weeklyReminder: boolean;
+  theme: ThemePreference;
+  language: LanguagePreference;
+  /** Set once the welcome tour is finished or skipped (or the user already had classes). */
+  onboardingDone: boolean;
+};
+export const defaultPreferences: Preferences = { weeklyReminder: true, theme: 'system', language: 'system', onboardingDone: false };
 
 export async function loadPreferences(): Promise<Preferences> {
   const [raw, legacyReminder] = await Promise.all([

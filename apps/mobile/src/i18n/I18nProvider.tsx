@@ -8,11 +8,12 @@ import { usePreferences } from '../state/PreferencesProvider';
 import { resolveLanguage, translate, TranslationKey } from './translate';
 import { Language, MessageParams, RTL_LANGUAGES } from './types';
 
-export type DateStyle = 'weekday' | 'weekdayDay' | 'dayMonth' | 'dayMonthYear' | 'full' | 'monthYear';
+export type DateStyle = 'weekday' | 'weekdayDay' | 'shortDate' | 'dayMonth' | 'dayMonthYear' | 'full' | 'monthYear';
 
 const DATE_FORMATS: Record<DateStyle, Intl.DateTimeFormatOptions> = {
   weekday: { weekday: 'short' },
   weekdayDay: { weekday: 'short', day: 'numeric' },
+  shortDate: { day: 'numeric', month: 'short' },
   dayMonth: { weekday: 'short', day: 'numeric', month: 'short' },
   dayMonthYear: { day: 'numeric', month: 'short', year: 'numeric' },
   full: { weekday: 'long', day: 'numeric', month: 'long' },

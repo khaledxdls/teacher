@@ -5,6 +5,7 @@ import { I18nProvider } from '../i18n/I18nProvider';
 import { PlannerProvider } from '../state/PlannerProvider';
 import { PreferencesProvider } from '../state/PreferencesProvider';
 import { ThemeProvider } from '../theme/ThemeProvider';
+import { createMemoryRepository } from './memoryRepository';
 
 /**
  * Wraps UI under test in the real app providers, with planner data supplied directly
@@ -15,7 +16,7 @@ export function AppProviders({ children, state = emptyPlannerState }: { children
     <PreferencesProvider>
       <ThemeProvider>
         <I18nProvider>
-          <PlannerProvider initialState={state}>{children}</PlannerProvider>
+          <PlannerProvider initialState={state} repository={createMemoryRepository(state)}>{children}</PlannerProvider>
         </I18nProvider>
       </ThemeProvider>
     </PreferencesProvider>

@@ -2,7 +2,7 @@ import { emptyPlannerState, PlannerState, SavedClass, ScheduleEntry } from '../t
 import { applyRemote, collectDirty, countDirty, markAllDirty, markPushed, SyncRecord } from '../sync';
 
 const cls = (id: string, updatedAt: number, extra: Partial<SavedClass> = {}): SavedClass =>
-  ({ id, name: `Class ${id}`, students: [], updatedAt, ...extra });
+  ({ id, name: `Class ${id}`, updatedAt, ...extra });
 const entry = (id: string, updatedAt: number, extra: Partial<ScheduleEntry> = {}): ScheduleEntry =>
   ({ id, date: '2026-11-13', startTime: '09:00', endTime: '10:00', subject: 'Math', classId: 'c1', room: '', updatedAt, ...extra });
 const state = (overrides: Partial<PlannerState>): PlannerState => ({ ...emptyPlannerState, ...overrides });
@@ -15,7 +15,7 @@ describe('collectDirty', () => {
     }));
     expect(records).toEqual([
       { collection: 'entry', id: 'e1', updatedAt: 7, deleted: true, data: expect.not.objectContaining({ dirty: true }) },
-      { collection: 'class', id: 'c1', updatedAt: 5, deleted: false, data: { id: 'c1', name: 'Class c1', students: [] } },
+      { collection: 'class', id: 'c1', updatedAt: 5, deleted: false, data: { id: 'c1', name: 'Class c1' } },
     ]);
     expect(records[0].data).not.toHaveProperty('updatedAt');
     expect(records[0].data).not.toHaveProperty('deleted');

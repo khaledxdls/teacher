@@ -45,7 +45,7 @@ function AssessmentForm({ classId, assessment, onClose, onSaved, onError }: Omit
       onError(tError({ code: 'assessmentMaxInvalid' }));
       return;
     }
-    const result = actions.saveAssessment({ id: assessment?.id ?? createId(), classId, title, date, maxScore: max, scores: assessment?.scores ?? {} });
+    const result = actions.saveAssessment({ id: assessment?.id ?? createId(), classId, title, date, maxScore: max });
     if (!result.ok) {
       onError(tError(result.error));
       return;

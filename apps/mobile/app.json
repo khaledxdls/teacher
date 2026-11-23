@@ -13,7 +13,7 @@
     "android": {
       "package": "com.teacherplanner.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#172b4d",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -36,6 +36,20 @@
             "fr",
             "ar"
           ]
+        }
+      ],
+      "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#f5f7fb",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#0e1525"
+          }
         }
       ]
     ],

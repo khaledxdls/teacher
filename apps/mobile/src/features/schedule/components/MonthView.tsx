@@ -1,5 +1,4 @@
 import { Pressable, Text, View } from 'react-native';
-import { parseDateKey } from '../../../domain/dates';
 import { SavedClass, ScheduleEntry } from '../../../domain/types';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { createStyles } from '../../../theme/createStyles';
@@ -8,7 +7,7 @@ import { useSharedStyles } from '../../../theme/sharedStyles';
 type Props = {
   lessons: ScheduleEntry[];
   classById: Map<string, SavedClass>;
-  onOpenLesson: (date: Date, lesson: ScheduleEntry) => void;
+  onOpenLesson: (lesson: ScheduleEntry) => void;
 };
 
 export default function MonthView({ lessons, classById, onOpenLesson }: Props) {
@@ -18,7 +17,7 @@ export default function MonthView({ lessons, classById, onOpenLesson }: Props) {
   return (
     <View style={styles.list}>
       {lessons.map((lesson) => (
-        <Pressable key={lesson.id} onPress={() => onOpenLesson(parseDateKey(lesson.date), lesson)} style={styles.item} accessibilityRole="button">
+        <Pressable key={lesson.id} onPress={() => onOpenLesson(lesson)} style={styles.item} accessibilityRole="button">
           <Text style={styles.date}>{formatDate(lesson.date, 'weekdayDay')}</Text>
           <View style={styles.text}>
             <Text style={shared.lessonSubject}>{lesson.subject}</Text>

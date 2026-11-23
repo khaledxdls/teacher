@@ -1,15 +1,14 @@
 import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Text } from 'react-native';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
 import ListRow from '../../components/ui/ListRow';
 import Screen from '../../components/ui/Screen';
 import { assessmentAverage, gradedCount } from '../../domain/grades';
 import { SavedClass } from '../../domain/types';
 import { useI18n } from '../../i18n/I18nProvider';
-import { useAssessments } from '../../state/planner';
-import { useSharedStyles } from '../../theme/sharedStyles';
+import { useAssessments, useScoreIndex, useStudents } from '../../state/planner';
 import MissingClass from '../classes/MissingClass';
 import { useRouteClass } from '../classes/useRouteClass';
 import AssessmentFormModal from './AssessmentFormModal';
@@ -20,10 +19,11 @@ export default function GradebookScreen() {
 }
 
 function Gradebook({ savedClass }: { savedClass: SavedClass }) {
-  const shared = useSharedStyles();
   const router = useRouter();
   const { t, formatDate } = useI18n();
   const assessments = useAssessments(savedClass.id);
+  const students = useStudents(savedClass.id);
+  const scores = useScoreIndex();
   const [creating, setCreating] = useState(false);
 
   const openAssessment = (assessmentId: string) =>
@@ -36,7 +36,7 @@ function Gradebook({ savedClass }: { savedClass: SavedClass }) {
       {assessments.length > 0 ? (
         <Card flush>
           {assessments.map((assessment, index) => {
-            const average = assessmentAverage(assessment, savedClass.students);
+            const average = assessmentAverage(assessment, scores, students);
             return (
               <ListRow
                 key={assessment.id}
@@ -44,7 +44,7 @@ function Gradebook({ savedClass }: { savedClass: SavedClass }) {
                 title={assessment.title}
                 subtitle={[
                   formatDate(assessment.date, 'dayMonthYear'),
-                  t('grades.graded', { count: gradedCount(assessment, savedClass.students), total: savedClass.students.length }),
+                  t('grades.graded', { count: gradedCount(assessment, scores, students), total: students.length }),
                   average === null ? t('grades.noScores') : t('grades.classAverage', { value: average }),
                 ].join(' · ')}
                 onPress={() => openAssessment(assessment.id)}
@@ -53,7 +53,7 @@ function Gradebook({ savedClass }: { savedClass: SavedClass }) {
           })}
         </Card>
       ) : (
-        <Text style={shared.emptyText}>{t('grades.empty')}</Text>
+        <EmptyState icon="school-outline" title={t('empty.gradesTitle')} message={t('empty.gradesMessage')} />
       )}
       <AssessmentFormModal
         visible={creating}

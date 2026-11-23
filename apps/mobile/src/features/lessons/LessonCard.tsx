@@ -1,9 +1,10 @@
 import { Pressable, Text, View } from 'react-native';
 import Badge from '../../components/ui/Badge';
-import { attendanceSummary } from '../../domain/attendance';
+import { AttendanceByStudent, attendanceSummary } from '../../domain/attendance';
 import { hasOpenFollowUp } from '../../domain/followUps';
+import { hasHomework } from '../../domain/homework';
 import { isRepeating } from '../../domain/recurrence';
-import { SavedClass, ScheduleEntry } from '../../domain/types';
+import { SavedClass, ScheduleEntry, Student } from '../../domain/types';
 import { useI18n } from '../../i18n/I18nProvider';
 import { createStyles } from '../../theme/createStyles';
 import { useSharedStyles } from '../../theme/sharedStyles';
@@ -11,6 +12,9 @@ import { useSharedStyles } from '../../theme/sharedStyles';
 type Props = {
   lesson: ScheduleEntry;
   savedClass: SavedClass | undefined;
+  /** Current students of the lesson's class. */
+  students: Student[];
+  attendance: AttendanceByStudent | undefined;
   accent: string;
   onPress: () => void;
   /** Highlights the card (e.g. the lesson happening now). */
@@ -18,12 +22,11 @@ type Props = {
 };
 
 /** A lesson in a list: time, badges, subject, class and room. */
-export default function LessonCard({ lesson, savedClass, accent, onPress, highlighted }: Props) {
+export default function LessonCard({ lesson, savedClass, students, attendance, accent, onPress, highlighted }: Props) {
   const styles = useStyles();
   const shared = useSharedStyles();
   const { t } = useI18n();
-  const students = savedClass?.students ?? [];
-  const summary = attendanceSummary(lesson, students);
+  const summary = attendanceSummary(attendance, students);
   const marked = students.length - summary.unmarked;
   const className = savedClass?.name ?? t('common.unknownClass');
 
@@ -39,6 +42,7 @@ export default function LessonCard({ lesson, savedClass, accent, onPress, highli
         <View style={styles.badges}>
           {marked > 0 && <Badge tone="success" label={t('schedule.badgeAttendance', { present: summary.present + summary.late, total: students.length })} />}
           {isRepeating(lesson) && <Badge tone="primary" label={t('schedule.badgeRepeats')} />}
+          {hasHomework(lesson) && <Badge tone="warning" label={t('lesson.homework').toUpperCase()} />}
           {hasOpenFollowUp(lesson) && <Badge tone="purple" label={t('schedule.badgeNote')} />}
         </View>
       </View>

@@ -13,8 +13,8 @@ import { SavedClass } from '../../domain/types';
 import { useToast } from '../../hooks/useToast';
 import { useI18n } from '../../i18n/I18nProvider';
 import { reportError } from '../../services/errorReporting';
-import { shareCsv, sharePdf, SharingUnavailableError } from '../../services/export';
-import { useCalendar, useLessons } from '../../state/planner';
+import { FILE_KINDS, sharePdf, shareTextFile, SharingUnavailableError } from '../../services/export';
+import { useCalendar, useLessons, usePlannerSelector, useStudents } from '../../state/planner';
 import { createStyles } from '../../theme/createStyles';
 import { useSharedStyles } from '../../theme/sharedStyles';
 import MissingClass from '../classes/MissingClass';
@@ -31,6 +31,8 @@ function Report({ savedClass }: { savedClass: SavedClass }) {
   const shared = useSharedStyles();
   const { t, formatDate, isRTL } = useI18n();
   const lessons = useLessons();
+  const students = useStudents(savedClass.id);
+  const marks = usePlannerSelector((state) => state.attendance);
   const calendar = useCalendar();
   const toast = useToast();
   const today = useMemo(() => new Date(), []);
@@ -44,7 +46,7 @@ function Report({ savedClass }: { savedClass: SavedClass }) {
     () => rangeForPreset(preset, today, calendar.events, classLessons, custom),
     [preset, today, calendar.events, classLessons, custom],
   );
-  const report = useMemo(() => buildAttendanceReport(savedClass, classLessons, range), [savedClass, classLessons, range]);
+  const report = useMemo(() => buildAttendanceReport(savedClass, students, classLessons, marks, range), [savedClass, students, classLessons, marks, range]);
   const rangeLabel = t('report.range', { from: formatDate(range.from, 'dayMonthYear'), to: formatDate(range.to, 'dayMonthYear') });
 
   const labels: ReportLabels = {
@@ -62,7 +64,7 @@ function Report({ savedClass }: { savedClass: SavedClass }) {
   async function share(kind: 'csv' | 'pdf') {
     setBusy(kind);
     try {
-      if (kind === 'csv') await shareCsv(`${savedClass.name}-attendance-${range.from}-${range.to}`, toCsv(report, labels), labels.title);
+      if (kind === 'csv') await shareTextFile(`${savedClass.name}-attendance-${range.from}-${range.to}`, toCsv(report, labels), FILE_KINDS.csv, labels.title);
       else await sharePdf(toHtml(report, labels, isRTL ? 'rtl' : 'ltr'), labels.title);
     } catch (error) {
       if (error instanceof SharingUnavailableError) toast.show(t('report.shareUnavailable'));

@@ -6,6 +6,7 @@ import { api, ApiError } from '../../services/api';
 import * as session from '../../services/session';
 import * as storage from '../../services/storage';
 import { classOf } from '../../test-utils/domainFixtures';
+import { createMemoryRepository } from '../../test-utils/memoryRepository';
 import { useClasses, usePlannerActions, usePlannerStore } from '../planner';
 import { PlannerProvider } from '../PlannerProvider';
 import { SyncProvider, useSync } from '../SyncProvider';
@@ -14,7 +15,6 @@ jest.mock('../../services/storage', () => ({
   loadSyncCursor: jest.fn(async () => null),
   saveSyncCursor: jest.fn(async () => undefined),
   clearSyncCursor: jest.fn(async () => undefined),
-  saveCollection: jest.fn(async () => undefined),
 }));
 jest.mock('../../services/session', () => ({
   loadSession: jest.fn(async () => null),
@@ -35,8 +35,9 @@ const USER = { id: 'u1', email: 'teacher@example.com', name: null };
 const SESSION = { token: 'token-1', user: USER };
 
 async function renderSync(state: PlannerState = { ...emptyPlannerState, classes: [classOf('k1', '7B', { updatedAt: 10 })] }) {
+  const repository = createMemoryRepository(state);
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <PlannerProvider initialState={state}><SyncProvider>{children}</SyncProvider></PlannerProvider>
+    <PlannerProvider initialState={state} repository={repository}><SyncProvider>{children}</SyncProvider></PlannerProvider>
   );
   const hook = await renderHook(() => ({ sync: useSync(), classes: useClasses(), actions: usePlannerActions(), store: usePlannerStore() }), { wrapper });
   await waitFor(() => expect(hook.result.current.sync.ready).toBe(true));
@@ -75,12 +76,22 @@ describe('SyncProvider', () => {
   it('merges changes from other devices', async () => {
     sessions.loadSession.mockResolvedValueOnce(SESSION);
     stored.loadSyncCursor.mockResolvedValueOnce({ userId: 'u1', cursor: 3, lastSyncedAt: 1 });
-    const remote: SyncRecord = { collection: 'class', id: 'k2', updatedAt: 20, deleted: false, data: { id: 'k2', name: '9C', students: [] } };
+    const remote: SyncRecord = { collection: 'class', id: 'k2', updatedAt: 20, deleted: false, data: { id: 'k2', name: '9C' } };
     server.sync.mockResolvedValueOnce({ cursor: 4, changes: [remote] });
 
     const { result } = await renderSync();
     await waitFor(() => expect(result.current.classes.map((item) => item.name)).toEqual(['7B', '9C']));
     expect(server.sync).toHaveBeenCalledWith('token-1', 3, []);
+  });
+
+  it('upgrades records sent in the older embedded shape by another device', async () => {
+    sessions.loadSession.mockResolvedValueOnce(SESSION);
+    const legacy: SyncRecord = { collection: 'class', id: 'k3', updatedAt: 30, deleted: false, data: { id: 'k3', name: '10A', students: [{ id: 'zoe', name: 'Zoe' }] } };
+    server.sync.mockResolvedValueOnce({ cursor: 1, changes: [legacy] });
+
+    const { result } = await renderSync();
+    await waitFor(() => expect(result.current.store.getState().students.map((item) => item.name)).toEqual(['Zoe']));
+    expect(result.current.store.getState().classes.find((item) => item.id === 'k3')).not.toHaveProperty('students');
   });
 
   it('pushes local edits shortly after they are made', async () => {

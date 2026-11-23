@@ -1,6 +1,8 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
 import PromptModal from '../../components/ui/PromptModal';
 import Screen from '../../components/ui/Screen';
 import { addDays } from '../../domain/dates';
@@ -20,6 +22,7 @@ const REFERENCE_FRIDAY = new Date(2026, 0, 2);
 export default function TemplatesScreen() {
   const styles = useStyles();
   const shared = useSharedStyles();
+  const router = useRouter();
   const { t, tError, formatDate } = useI18n();
   const templates = useTemplates();
   const classById = useClassById();
@@ -37,7 +40,7 @@ export default function TemplatesScreen() {
 
   return (
     <Screen toastMessage={toast.message}>
-      <Text style={shared.hint}>{t('templates.hint')}</Text>
+      {templates.length > 0 && <Text style={shared.hint}>{t('templates.hint')}</Text>}
       {templates.map((template) => (
         <Card key={template.id} title={template.name}>
           <Text style={shared.subtitle}>
@@ -61,7 +64,15 @@ export default function TemplatesScreen() {
           </View>
         </Card>
       ))}
-      {templates.length === 0 && <Text style={shared.emptyText}>{t('templates.empty')}</Text>}
+      {templates.length === 0 && (
+        <EmptyState
+          icon="copy-outline"
+          title={t('empty.templatesTitle')}
+          message={t('empty.templatesMessage')}
+          actionLabel={t('empty.templatesAction')}
+          onAction={() => router.push('/schedule')}
+        />
+      )}
       <PromptModal
         visible={renaming !== null}
         title={t('templates.renameTitle')}

@@ -1,27 +1,25 @@
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Toast from '../../components/feedback/Toast';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
 import ListRow from '../../components/ui/ListRow';
 import { holidayOn, rotationWeek } from '../../domain/calendar';
-import { dateKey, dateTimeOf, parseDateKey } from '../../domain/dates';
+import { dateKey, dateTimeOf } from '../../domain/dates';
 import { openFollowUps } from '../../domain/followUps';
 import { currentEntry, entriesOn, nextEntry } from '../../domain/schedule';
 import { ScheduleEntry } from '../../domain/types';
 import { useNow } from '../../hooks/useNow';
-import { useToast } from '../../hooks/useToast';
 import { useI18n } from '../../i18n/I18nProvider';
 import { TranslationKey } from '../../i18n/translate';
-import { useCalendar, useClassById, useLessons } from '../../state/planner';
+import { useAttendanceIndex, useCalendar, useClassById, useLessons, useStudentsByClass } from '../../state/planner';
 import { createStyles } from '../../theme/createStyles';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSharedStyles } from '../../theme/sharedStyles';
 import LessonCard from '../lessons/LessonCard';
-import LessonEditorModal, { EditorSession } from '../schedule/components/LessonEditorModal';
 
 const FOLLOW_UP_PREVIEW = 3;
 
@@ -37,9 +35,9 @@ export default function TodayScreen() {
   const now = useNow();
   const lessons = useLessons();
   const classById = useClassById();
+  const studentsByClass = useStudentsByClass();
+  const attendance = useAttendanceIndex();
   const calendar = useCalendar();
-  const toast = useToast();
-  const [editor, setEditor] = useState<EditorSession>(() => ({ key: 0, visible: false, date: new Date(), lesson: null }));
 
   const today = dateKey(now);
   const todaysLessons = useMemo(() => entriesOn(lessons, today), [lessons, today]);
@@ -49,8 +47,7 @@ export default function TodayScreen() {
   const holiday = holidayOn(calendar.events, today);
   const rotation = rotationWeek(calendar.settings, today);
 
-  const openLesson = (lesson: ScheduleEntry) =>
-    setEditor((state) => ({ key: state.key + 1, visible: true, date: parseDateKey(lesson.date), lesson }));
+  const openLesson = (lesson: ScheduleEntry) => router.push({ pathname: '/lesson/[id]', params: { id: lesson.id } });
   const className = (lesson: ScheduleEntry) => classById.get(lesson.classId)?.name ?? t('common.unknownClass');
 
   const featured = current ?? upcoming;
@@ -70,66 +67,72 @@ export default function TodayScreen() {
 
         {holiday && <Text style={styles.holiday}>{t('today.holiday', { title: holiday.title })}</Text>}
 
-        {featured ? (
-          <Pressable style={styles.featured} onPress={() => openLesson(featured)} accessibilityRole="button">
-            <Text style={styles.featuredLabel}>{t(current ? 'today.nowLesson' : 'today.nextLesson')}</Text>
-            <Text style={styles.featuredSubject}>{featured.subject}</Text>
-            <Text style={styles.featuredMeta}>
-              {className(featured)} · {featured.date === today ? '' : `${formatDate(featured.date, 'dayMonth')} · `}{featured.startTime}–{featured.endTime}
-              {featured.room ? ` · ${t('common.room', { room: featured.room })}` : ''}
-            </Text>
-            <Text style={styles.featuredDetail}>{featuredDetail}</Text>
-            {current && (classById.get(current.classId)?.students.length ?? 0) > 0 && (
-              <Button label={t('today.takeAttendance')} variant="secondary" onPress={() => openLesson(current)} style={styles.featuredButton} />
-            )}
-          </Pressable>
+        {lessons.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon="calendar-outline"
+              title={t('empty.todayTitle')}
+              message={t('empty.todayMessage')}
+              actionLabel={t('empty.todayAction')}
+              onAction={() => router.push('/schedule')}
+            />
+          </Card>
         ) : (
-          <Card><Text style={shared.hint}>{t('today.nothingUpcoming')}</Text></Card>
+          <>
+            {featured && (
+              <Pressable style={styles.featured} onPress={() => openLesson(featured)} accessibilityRole="button">
+                <Text style={styles.featuredLabel}>{t(current ? 'today.nowLesson' : 'today.nextLesson')}</Text>
+                <Text style={styles.featuredSubject}>{featured.subject}</Text>
+                <Text style={styles.featuredMeta}>
+                  {className(featured)} · {featured.date === today ? '' : `${formatDate(featured.date, 'dayMonth')} · `}{featured.startTime}–{featured.endTime}
+                  {featured.room ? ` · ${t('common.room', { room: featured.room })}` : ''}
+                </Text>
+                <Text style={styles.featuredDetail}>{featuredDetail}</Text>
+                {current && (studentsByClass.get(current.classId)?.length ?? 0) > 0 && (
+                  <Button label={t('today.takeAttendance')} variant="secondary" onPress={() => openLesson(current)} style={styles.featuredButton} />
+                )}
+              </Pressable>
+            )}
+
+            <Card title={t('today.todaysLessons')}>
+              {todaysLessons.map((lesson, index) => (
+                <LessonCard
+                  key={lesson.id}
+                  lesson={lesson}
+                  savedClass={classById.get(lesson.classId)}
+                  students={studentsByClass.get(lesson.classId) ?? []}
+                  attendance={attendance.get(lesson.id)}
+                  accent={palette.accents[index % palette.accents.length]}
+                  highlighted={lesson.id === current?.id}
+                  onPress={() => openLesson(lesson)}
+                />
+              ))}
+              {todaysLessons.length === 0 && <Text style={shared.hint}>{t('today.noLessonsToday')}</Text>}
+            </Card>
+
+            <Card
+              flush
+              title={t('today.followUps')}
+              action={followUps.length > FOLLOW_UP_PREVIEW ? (
+                <Pressable onPress={() => router.push('/follow-ups')} accessibilityRole="link" hitSlop={8}>
+                  <Text style={styles.link}>{t('common.seeAll')}</Text>
+                </Pressable>
+              ) : undefined}
+            >
+              {followUps.slice(0, FOLLOW_UP_PREVIEW).map((lesson) => (
+                <ListRow
+                  key={lesson.id}
+                  divider
+                  title={lesson.notes!.trim()}
+                  subtitle={t('followUps.source', { subject: lesson.subject, className: className(lesson), date: formatDate(lesson.date, 'dayMonth') })}
+                  onPress={() => openLesson(lesson)}
+                />
+              ))}
+              {followUps.length === 0 && <Text style={[shared.hint, styles.flushPadding]}>{t('today.noFollowUps')}</Text>}
+            </Card>
+          </>
         )}
-
-        <Card title={t('today.todaysLessons')}>
-          {todaysLessons.map((lesson, index) => (
-            <LessonCard
-              key={lesson.id}
-              lesson={lesson}
-              savedClass={classById.get(lesson.classId)}
-              accent={palette.accents[index % palette.accents.length]}
-              highlighted={lesson.id === current?.id}
-              onPress={() => openLesson(lesson)}
-            />
-          ))}
-          {todaysLessons.length === 0 && <Text style={shared.hint}>{t('today.noLessonsToday')}</Text>}
-        </Card>
-
-        <Card
-          flush
-          title={t('today.followUps')}
-          action={followUps.length > FOLLOW_UP_PREVIEW ? (
-            <Pressable onPress={() => router.push('/follow-ups')} accessibilityRole="link" hitSlop={8}>
-              <Text style={styles.link}>{t('common.seeAll')}</Text>
-            </Pressable>
-          ) : undefined}
-        >
-          {followUps.slice(0, FOLLOW_UP_PREVIEW).map((lesson) => (
-            <ListRow
-              key={lesson.id}
-              divider
-              title={lesson.notes!.trim()}
-              subtitle={t('followUps.source', { subject: lesson.subject, className: className(lesson), date: formatDate(lesson.date, 'dayMonth') })}
-              onPress={() => router.push('/follow-ups')}
-            />
-          ))}
-          {followUps.length === 0 && <Text style={[shared.hint, styles.flushPadding]}>{t('today.noFollowUps')}</Text>}
-        </Card>
       </ScrollView>
-      {!editor.visible && <Toast message={toast.message} />}
-
-      <LessonEditorModal
-        session={editor}
-        onClose={() => setEditor((state) => ({ ...state, visible: false }))}
-        onDone={toast.show}
-        onManageStudents={(classId) => router.push({ pathname: '/class/[id]', params: { id: classId } })}
-      />
     </SafeAreaView>
   );
 }

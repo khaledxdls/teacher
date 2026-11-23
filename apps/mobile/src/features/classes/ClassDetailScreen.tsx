@@ -1,8 +1,8 @@
 import { Stack, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Text } from 'react-native';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
 import InlineAddField from '../../components/ui/InlineAddField';
 import ListRow from '../../components/ui/ListRow';
 import PromptModal from '../../components/ui/PromptModal';
@@ -14,8 +14,7 @@ import { useActionFeedback } from '../../hooks/useActionFeedback';
 import { useConfirm } from '../../hooks/useConfirm';
 import { useToast } from '../../hooks/useToast';
 import { useI18n } from '../../i18n/I18nProvider';
-import { useAssessments, useLessons, usePlannerActions } from '../../state/planner';
-import { useSharedStyles } from '../../theme/sharedStyles';
+import { useAssessments, useLessons, usePlannerActions, usePlannerSelector, useScoreIndex, useStudents } from '../../state/planner';
 import MissingClass from './MissingClass';
 import { useRouteClass } from './useRouteClass';
 
@@ -25,18 +24,24 @@ export default function ClassDetailScreen() {
 }
 
 function ClassDetail({ savedClass }: { savedClass: SavedClass }) {
-  const shared = useSharedStyles();
   const router = useRouter();
   const { t, tError } = useI18n();
+  const students = useStudents(savedClass.id);
   const lessons = useLessons();
+  const attendance = usePlannerSelector((state) => state.attendance);
   const assessments = useAssessments(savedClass.id);
+  const scores = useScoreIndex();
   const actions = usePlannerActions();
   const confirm = useConfirm();
   const toast = useToast();
   const feedback = useActionFeedback(toast.show);
   const [studentName, setStudentName] = useState('');
   const [renaming, setRenaming] = useState(false);
-  const stats = useMemo(() => studentAttendanceStats(lessons, savedClass.id), [lessons, savedClass.id]);
+
+  const stats = useMemo(() => {
+    const lessonIds = new Set(lessons.filter((lesson) => lesson.classId === savedClass.id).map((lesson) => lesson.id));
+    return studentAttendanceStats(attendance, lessonIds);
+  }, [lessons, attendance, savedClass.id]);
   const params = { id: savedClass.id };
 
   function addStudent() {
@@ -52,7 +57,7 @@ function ClassDetail({ savedClass }: { savedClass: SavedClass }) {
   function studentSummary(studentId: string) {
     const record = stats.get(studentId);
     const rate = record ? attendanceRate(record) : null;
-    const average = studentAverage(assessments, studentId);
+    const average = studentAverage(assessments, scores, studentId);
     return [
       rate === null ? t('attendance.noneYet') : t('attendance.rate', { rate }),
       average === null ? null : t('grades.studentAverage', { value: average }),
@@ -63,9 +68,9 @@ function ClassDetail({ savedClass }: { savedClass: SavedClass }) {
     <Screen toastMessage={toast.message}>
       <Stack.Screen options={{ title: savedClass.name }} />
 
-      <Card flush title={t('classDetail.students', { count: savedClass.students.length })}>
+      <Card flush title={t('classDetail.students', { count: students.length })}>
         <InlineAddField value={studentName} onChange={setStudentName} onSubmit={addStudent} placeholder={t('classDetail.studentName')} />
-        {savedClass.students.map((student) => (
+        {students.map((student) => (
           <ListRow
             key={student.id}
             divider
@@ -74,9 +79,10 @@ function ClassDetail({ savedClass }: { savedClass: SavedClass }) {
             onPress={() => router.push({ pathname: '/class/[id]/student/[studentId]', params: { ...params, studentId: student.id } })}
           />
         ))}
-        {savedClass.students.length === 0 && <Text style={shared.emptyText}>{t('classDetail.noStudents')}</Text>}
+        {students.length === 0 && <EmptyState icon="person-add-outline" title={t('empty.studentsTitle')} message={t('empty.studentsMessage')} />}
       </Card>
 
+      <Button label={t('classDetail.insights')} onPress={() => router.push({ pathname: '/class/[id]/insights', params })} />
       <Button label={t('classDetail.gradebook')} variant="secondary" onPress={() => router.push({ pathname: '/class/[id]/grades', params })} />
       <Button label={t('classDetail.report')} variant="secondary" onPress={() => router.push({ pathname: '/class/[id]/report', params })} />
       <Button label={t('classDetail.rename')} variant="outline" onPress={() => setRenaming(true)} />

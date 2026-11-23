@@ -1,6 +1,6 @@
 # ClassPilot
 
-A planner for teachers: a Friday–Thursday schedule with repeating lessons, a Today view, classes and students, attendance with exportable reports, a gradebook, follow-ups from after-class notes, week templates, a school calendar (terms, holidays, Week A/B) and reminders. Works offline on the phone; signing in backs everything up and syncs it across devices. Available in English, French and Arabic (right-to-left), in light and dark mode.
+A planner for teachers: a Friday–Thursday schedule with repeating lessons, a Today view, and a page per lesson with attendance, lesson plan (objectives, links, homework), homework tracking, participation/behaviour notes and after-class notes. Classes and students, a gradebook, class insights (attendance and grade trends, students who need attention), exportable attendance reports, week templates, a school calendar (terms, holidays, Week A/B), calendar export (.ics), file backup/restore and reminders. A short welcome tour sets up the first class. Works offline (SQLite on the phone); signing in backs everything up and syncs it across devices. English, French and Arabic (right-to-left), light and dark mode.
 
 npm-workspaces monorepo:
 
@@ -54,7 +54,8 @@ apps/mobile/src/
   state/          external store + PlannerProvider (binds commands), SyncProvider, preferences
   i18n/           typed dictionaries (en is the source; fr/ar must match its shape), plural rules
   theme/          light/dark palettes, ThemeProvider, createStyles()
-  services/       storage, notifications, API client, export/share, error reporting
+  services/       repository (SQLite on native, AsyncStorage on web), notifications, API client,
+                  export/share/import, error reporting
 ```
 
 Key ideas:
@@ -66,12 +67,14 @@ Key ideas:
 
 ## Sync design
 
-- Every record (lesson, class, template, assessment, calendar event, setting) carries `updatedAt`, a `deleted` tombstone flag and a local-only `dirty` flag.
+- Every record carries `updatedAt`, a `deleted` tombstone flag and a local-only `dirty` flag. Collections: lessons, classes, students, templates, assessments, scores, attendance marks, homework marks, behaviour notes, calendar events, settings.
+- Anything two devices might edit independently is its own record. Per-student marks use deterministic ids (`lessonId:studentId`, `assessmentId:studentId`), so two devices marking the same student converge on one record.
+- Older data that embedded students/scores/attendance in their parent record is upgraded on load and on every sync (`upgradeEmbeddedRecords`).
 - `POST /sync` sends dirty records and receives everything changed since the client's cursor; the server keeps the newest `updatedAt` per record (last write wins) and serializes writes per user.
 - Signing in uploads what is already on the phone. Signing out keeps the data on the phone.
 - Changing or resetting the password signs out other devices (token version check).
 
-Known limits: a class's student list (and an assessment's scores) sync as one record, so simultaneous edits of the same class on two devices keep only the newer one. Tombstones are kept indefinitely.
+Known limits: each record is last-write-wins as a whole (two devices editing the same lesson's plan at the same moment keep the newer one). Tombstones are kept indefinitely. Lesson "attachments" are links (e.g. to a drive); files are not uploaded.
 
 ## API
 
@@ -89,6 +92,16 @@ Known limits: a class's student list (and an assessment's scores) sync as one re
 | `GET` | `/health` | API and database status |
 
 Authenticated routes take `Authorization: Bearer <token>`.
+
+## Icons
+
+`apps/mobile/scripts/generate-icons.cjs` renders the app icon, Android adaptive/monochrome icons, splash image and favicon from SVG:
+
+```powershell
+cd apps/mobile
+npm i --no-save @resvg/resvg-js@2
+node scripts/generate-icons.cjs assets
+```
 
 ## Deployment
 

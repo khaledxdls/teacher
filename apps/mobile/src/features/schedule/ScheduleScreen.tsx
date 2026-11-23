@@ -13,7 +13,7 @@ import { ScheduleEntry, ScheduleTemplate } from '../../domain/types';
 import { useActionFeedback } from '../../hooks/useActionFeedback';
 import { useToast } from '../../hooks/useToast';
 import { useI18n } from '../../i18n/I18nProvider';
-import { useCalendar, useClassById, useLessons, usePlannerActions, useTemplates } from '../../state/planner';
+import { useAttendanceIndex, useCalendar, useClassById, useLessons, usePlannerActions, useStudentsByClass, useTemplates } from '../../state/planner';
 import { createStyles } from '../../theme/createStyles';
 import TemplatePickerModal from '../templates/TemplatePickerModal';
 import LessonEditorModal, { EditorSession } from './components/LessonEditorModal';
@@ -32,6 +32,8 @@ export default function ScheduleScreen() {
   const templates = useTemplates();
   const classById = useClassById();
   const calendar = useCalendar();
+  const studentsByClass = useStudentsByClass();
+  const attendance = useAttendanceIndex();
   const toast = useToast();
   const feedback = useActionFeedback(toast.show);
 
@@ -52,8 +54,8 @@ export default function ScheduleScreen() {
   const shiftPeriod = (amount: number) =>
     setSelectedDate((current) => (view === 'month' ? addMonths(current, amount) : addDays(current, amount * 7)));
 
-  const openEditor = (date: Date, lesson: ScheduleEntry | null = null) =>
-    setEditor((current) => ({ key: current.key + 1, visible: true, date, lesson }));
+  const openEditor = (date: Date) => setEditor((current) => ({ key: current.key + 1, visible: true, date, lesson: null }));
+  const openLesson = (lesson: ScheduleEntry) => router.push({ pathname: '/lesson/[id]', params: { id: lesson.id } });
   const closeEditor = () => setEditor((current) => ({ ...current, visible: false }));
 
   function startSavingTemplate() {
@@ -91,13 +93,15 @@ export default function ScheduleScreen() {
               days={days}
               lessons={weekLessons}
               classById={classById}
+              studentsByClass={studentsByClass}
+              attendance={attendance}
               events={calendar.events}
               today={todayKey()}
-              onOpenLesson={openEditor}
+              onOpenLesson={openLesson}
               onAddToDay={openEditor}
             />
           )
-          : <MonthView lessons={monthLessons} classById={classById} onOpenLesson={openEditor} />}
+          : <MonthView lessons={monthLessons} classById={classById} onOpenLesson={openLesson} />}
         <View style={styles.actions}>
           <Button variant="secondary" label={t('schedule.saveTemplate')} onPress={startSavingTemplate} />
           <Button variant="secondary" label={t('schedule.applyTemplate')} onPress={startApplyingTemplate} />
@@ -108,8 +112,7 @@ export default function ScheduleScreen() {
       <LessonEditorModal
         session={editor}
         onClose={closeEditor}
-        onDone={toast.show}
-        onManageStudents={(classId) => router.push({ pathname: '/class/[id]', params: { id: classId } })}
+        onDone={({ message }) => toast.show(message)}
       />
       <PromptModal
         visible={savingTemplate}

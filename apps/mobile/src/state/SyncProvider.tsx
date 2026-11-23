@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import { upgradeEmbeddedRecords } from '../domain/migrations';
 import { applyRemote, collectDirty, markAllDirty, markPushed } from '../domain/sync';
 import { api, ApiError, AuthResponse } from '../services/api';
 import { reportError } from '../services/errorReporting';
@@ -107,7 +108,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         const response = await api.sync(current.token, cursor, batch);
         // The session may have ended while the request was in flight.
         if (sessionRef.current?.token !== current.token) return;
-        store.setState((state) => applyRemote(markPushed(state, batch), response.changes));
+        // Another device may still send older embedded shapes; upgrade them on arrival.
+        store.setState((state) => upgradeEmbeddedRecords(applyRemote(markPushed(state, batch), response.changes), Date.now()));
         cursor = response.cursor;
       }
       const saved: SyncCursor = { userId: current.user.id, cursor, lastSyncedAt: Date.now() };

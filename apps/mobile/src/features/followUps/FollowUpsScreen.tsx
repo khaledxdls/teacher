@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Text } from 'react-native';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
 import ListRow from '../../components/ui/ListRow';
 import Screen from '../../components/ui/Screen';
 import { doneFollowUps, openFollowUps } from '../../domain/followUps';
@@ -11,11 +11,9 @@ import { useToast } from '../../hooks/useToast';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useClassById, useLessons, usePlannerActions } from '../../state/planner';
 import { createStyles } from '../../theme/createStyles';
-import { useSharedStyles } from '../../theme/sharedStyles';
 
 export default function FollowUpsScreen() {
   const styles = useStyles();
-  const shared = useSharedStyles();
   const { t, formatDate } = useI18n();
   const lessons = useLessons();
   const classById = useClassById();
@@ -51,10 +49,13 @@ export default function FollowUpsScreen() {
 
   return (
     <Screen toastMessage={toast.message}>
-      <Card flush title={t('followUps.open')}>
-        {open.map((lesson) => row(lesson, true))}
-        {open.length === 0 && <Text style={shared.emptyText}>{t('followUps.empty')}</Text>}
-      </Card>
+      {open.length > 0 ? (
+        <Card flush title={t('followUps.open')}>
+          {open.map((lesson) => row(lesson, true))}
+        </Card>
+      ) : (
+        <EmptyState icon="checkmark-done-outline" title={t('empty.followUpsTitle')} message={t('empty.followUpsMessage')} />
+      )}
       {done.length > 0 && (
         <Card flush title={t('followUps.recentlyDone')}>
           {done.map((lesson) => row(lesson, false))}

@@ -1,8 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Tabs } from 'expo-router';
-import { ComponentProps } from 'react';
+import { Redirect, Tabs } from 'expo-router';
+import { ComponentProps, useEffect } from 'react';
 import { ColorValue } from 'react-native';
 import { useI18n } from '../../i18n/I18nProvider';
+import { useClasses, usePlannerHydrated } from '../../state/planner';
+import { usePreferences } from '../../state/PreferencesProvider';
 import { useSync } from '../../state/SyncProvider';
 import { useTheme } from '../../theme/ThemeProvider';
 
@@ -15,8 +17,20 @@ export default function TabsLayout() {
   const { palette } = useTheme();
   const { t } = useI18n();
   const sync = useSync();
+  const hydrated = usePlannerHydrated();
+  const hasClasses = useClasses().length > 0;
+  const { preferences, loaded, setPreference } = usePreferences();
+  const ready = loaded && hydrated && !preferences.onboardingDone;
+
+  // People who already have classes (e.g. from before the tour existed) never see it.
+  useEffect(() => {
+    if (ready && hasClasses) setPreference('onboardingDone', true);
+  }, [ready, hasClasses, setPreference]);
+
   // Small dot on Settings when signed out or when the last sync failed.
   const settingsBadge = sync.ready && (!sync.session || sync.status === 'error') ? '' : undefined;
+
+  if (ready && !hasClasses) return <Redirect href="/welcome" />;
 
   return (
     <Tabs

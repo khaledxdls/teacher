@@ -4,7 +4,7 @@ import { todayKey } from '../domain/dates';
 import { ok, Result } from '../domain/errors';
 import { emptyPlannerState, PlannerState } from '../domain/types';
 import { reportError } from '../services/errorReporting';
-import { loadPlannerState, saveCollection } from '../services/storage';
+import { createPlannerRepository, PlannerRepository } from '../services/repository';
 import { createStore, Store } from './store';
 
 type BoundCommand<C> = C extends (state: PlannerState, input: infer Input, ...rest: never[]) => Result<{ value: infer Value }>
@@ -39,18 +39,12 @@ function bindCommands(store: Store<PlannerState>): PlannerActions {
   return bound as PlannerActions;
 }
 
-const collectionNames = Object.keys(emptyPlannerState) as (keyof PlannerState)[];
-
-/** Saves each collection whose array changed since the last save. */
-function persistChanges(store: Store<PlannerState>) {
+/** Saves every change to the repository (only changed records are written). */
+function persistChanges(store: Store<PlannerState>, repository: PlannerRepository) {
   let saved = store.getState();
   return store.subscribe(() => {
     const current = store.getState();
-    for (const name of collectionNames) {
-      if (current[name] !== saved[name]) {
-        saveCollection(name, current[name]).catch((error) => reportError(error, { where: `save:${name}` }));
-      }
-    }
+    repository.save(saved, current).catch((error) => reportError(error, { where: 'savePlanner' }));
     saved = current;
   });
 }
@@ -59,20 +53,29 @@ function persistChanges(store: Store<PlannerState>) {
  * Owns all planner data. Loads it once, then saves every change. Nothing is written until
  * loading has finished, so the initial empty state can never overwrite stored data.
  */
-export function PlannerProvider({ children, initialState }: { children: ReactNode; initialState?: PlannerState }) {
+type ProviderProps = {
+  children: ReactNode;
+  /** Skips loading (tests and previews). */
+  initialState?: PlannerState;
+  repository?: PlannerRepository;
+};
+
+export function PlannerProvider({ children, initialState, repository: injected }: ProviderProps) {
+  const [repository] = useState(() => injected ?? createPlannerRepository());
   const [store] = useState(() => createStore<PlannerState>(initialState ?? emptyPlannerState));
   const [actions] = useState(() => bindCommands(store));
   const [hydrated, setHydrated] = useState(Boolean(initialState));
 
   useEffect(() => {
-    if (initialState) return persistChanges(store);
+    if (initialState) return persistChanges(store, repository);
     let active = true;
     let unsubscribe = () => {};
-    loadPlannerState()
+    repository.load()
       .then((loaded) => {
         if (!active) return;
         store.setState(() => loaded);
-        unsubscribe = persistChanges(store);
+        // Records upgraded while loading (older embedded data) are saved on the next change.
+        unsubscribe = persistChanges(store, repository);
         setHydrated(true);
       })
       // Stay un-hydrated on failure so the empty in-memory state never overwrites stored data.
@@ -81,7 +84,7 @@ export function PlannerProvider({ children, initialState }: { children: ReactNod
       active = false;
       unsubscribe();
     };
-  }, [store, initialState]);
+  }, [store, initialState, repository]);
 
   const value = useMemo(() => ({ store, actions, hydrated }), [store, actions, hydrated]);
   return <PlannerContext.Provider value={value}>{children}</PlannerContext.Provider>;

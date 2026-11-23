@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
+import { indexAttendance } from '../domain/attendance';
 import { calendarSettingsOf, sortEvents } from '../domain/calendar';
-import { sortAssessments } from '../domain/grades';
-import { alive, indexById } from '../domain/records';
+import { indexScores, sortAssessments } from '../domain/grades';
+import { indexHomework } from '../domain/homework';
+import { alive, groupBy, indexById } from '../domain/records';
 import { countDirty } from '../domain/sync';
-import { PlannerState } from '../domain/types';
+import { PlannerState, Student } from '../domain/types';
 import { usePlannerContext } from './PlannerProvider';
 import { useStoreSelector } from './store';
 
@@ -34,6 +36,31 @@ export function useClassById() {
   return useMemo(() => indexById(classes), [classes]);
 }
 
+const NO_STUDENTS: Student[] = [];
+const byName = (a: Student, b: Student) => a.name.localeCompare(b.name);
+
+/** Live students grouped by class id, each list sorted by name. */
+export function useStudentsByClass() {
+  const students = usePlannerSelector((state) => state.students);
+  return useMemo(() => {
+    const groups = groupBy(students, (student) => student.classId);
+    for (const list of groups.values()) list.sort(byName);
+    return groups;
+  }, [students]);
+}
+
+/** Live students of one class, sorted by name. */
+export function useStudents(classId: string | undefined) {
+  const groups = useStudentsByClass();
+  return (classId && groups.get(classId)) || NO_STUDENTS;
+}
+
+/** All students by id (including removed ones, for history). */
+export function useStudentById() {
+  const students = usePlannerSelector((state) => state.students);
+  return useMemo(() => indexById(students), [students]);
+}
+
 export function useTemplates() {
   const templates = usePlannerSelector((state) => state.templates);
   return useMemo(() => alive(templates), [templates]);
@@ -46,6 +73,30 @@ export function useAssessments(classId: string | undefined) {
     () => sortAssessments(alive(assessments).filter((assessment) => assessment.classId === classId)),
     [assessments, classId],
   );
+}
+
+/** Scores indexed by assessment, then student. */
+export function useScoreIndex() {
+  const scores = usePlannerSelector((state) => state.scores);
+  return useMemo(() => indexScores(scores), [scores]);
+}
+
+/** Attendance statuses indexed by lesson, then student. */
+export function useAttendanceIndex() {
+  const attendance = usePlannerSelector((state) => state.attendance);
+  return useMemo(() => indexAttendance(attendance), [attendance]);
+}
+
+/** Homework statuses indexed by lesson, then student. */
+export function useHomeworkIndex() {
+  const homework = usePlannerSelector((state) => state.homework);
+  return useMemo(() => indexHomework(homework), [homework]);
+}
+
+/** Live behaviour notes. */
+export function useBehaviorNotes() {
+  const behavior = usePlannerSelector((state) => state.behavior);
+  return useMemo(() => alive(behavior), [behavior]);
 }
 
 export function useCalendar() {

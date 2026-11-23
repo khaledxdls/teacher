@@ -4,7 +4,7 @@ import { emptyPlannerState } from '../../../domain/types';
 import { useLessons } from '../../../state/planner';
 import { classOf } from '../../../test-utils/domainFixtures';
 import { renderWithProviders } from '../../../test-utils/renderWithProviders';
-import AttendanceList from '../components/AttendanceList';
+import StatusList from '../../lessons/StatusList';
 import LessonEditorModal from '../components/LessonEditorModal';
 
 jest.mock('../../../services/errorReporting', () => ({ reportError: jest.fn() }));
@@ -22,12 +22,7 @@ describe('LessonEditorModal', () => {
     const onDone = jest.fn();
     await renderWithProviders(
       <>
-        <LessonEditorModal
-          session={{ key: 1, visible: true, date: new Date(2026, 10, 20), lesson: null }}
-          onClose={() => undefined}
-          onDone={onDone}
-          onManageStudents={() => undefined}
-        />
+        <LessonEditorModal session={{ key: 1, visible: true, date: new Date(2026, 10, 20), lesson: null }} onClose={() => undefined} onDone={onDone} />
         <LessonCount />
       </>,
       { ...emptyPlannerState, classes: [classOf('c7b', '7B')] },
@@ -43,25 +38,33 @@ describe('LessonEditorModal', () => {
     await pressSubmit();
 
     // Weekly for the default 12 weeks after the first lesson: 13 lessons.
-    await waitFor(() => expect(onDone).toHaveBeenCalledWith('13 lessons added.'));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ action: 'created', message: '13 lessons added.' })));
     expect(screen.getByTestId('lesson-count')).toHaveTextContent('13');
   });
 });
 
-describe('AttendanceList', () => {
-  it('cycles a student through the statuses and marks everyone present', async () => {
+describe('StatusList', () => {
+  it('cycles a student to the next status', async () => {
     const onChange = jest.fn();
     const students = [{ id: 's1', name: 'Ana' }, { id: 's2', name: 'Ben' }];
-    const { rerender } = await renderWithProviders(<AttendanceList students={students} attendance={{}} onChange={onChange} />);
+    const statuses: Record<string, 'done' | 'missing'> = { s2: 'missing' };
+    await renderWithProviders(
+      <StatusList<'done' | 'missing'>
+        title="Homework"
+        students={students}
+        statusOf={(id) => statuses[id]}
+        next={(current) => (current ? undefined : 'done')}
+        onChange={onChange}
+        label={(status) => status ?? 'Not marked'}
+        tone={{ done: 'success', missing: 'danger' }}
+        accessibilityLabel={(name, status) => `${name}: ${status}`}
+      />,
+    );
 
-    await fireEvent.press(screen.getByText('Ana'));
-    expect(onChange).toHaveBeenLastCalledWith({ s1: 'present' });
-
-    await rerender(<AttendanceList students={students} attendance={{ s1: 'absent' }} onChange={onChange} />);
-    await fireEvent.press(screen.getByText('Ana'));
-    expect(onChange).toHaveBeenLastCalledWith({});
-
-    await fireEvent.press(screen.getByText('Mark all present'));
-    expect(onChange).toHaveBeenLastCalledWith({ s1: 'present', s2: 'present' });
+    expect(screen.getByText('missing')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Ana: Not marked'));
+    expect(onChange).toHaveBeenLastCalledWith('s1', 'done');
+    await fireEvent.press(screen.getByLabelText('Ben: missing'));
+    expect(onChange).toHaveBeenLastCalledWith('s2', undefined);
   });
 });

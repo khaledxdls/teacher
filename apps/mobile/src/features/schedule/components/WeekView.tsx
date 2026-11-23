@@ -1,7 +1,8 @@
 import { Pressable, Text, View } from 'react-native';
 import { holidayOn } from '../../../domain/calendar';
 import { dateKey } from '../../../domain/dates';
-import { CalendarEvent, SavedClass, ScheduleEntry } from '../../../domain/types';
+import { AttendanceByStudent } from '../../../domain/attendance';
+import { CalendarEvent, SavedClass, ScheduleEntry, Student } from '../../../domain/types';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { createStyles } from '../../../theme/createStyles';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -11,13 +12,15 @@ type Props = {
   days: Date[];
   lessons: ScheduleEntry[];
   classById: Map<string, SavedClass>;
+  studentsByClass: Map<string, Student[]>;
+  attendance: Map<string, AttendanceByStudent>;
   events: CalendarEvent[];
   today: string;
-  onOpenLesson: (date: Date, lesson: ScheduleEntry) => void;
+  onOpenLesson: (lesson: ScheduleEntry) => void;
   onAddToDay: (date: Date) => void;
 };
 
-export default function WeekView({ days, lessons, classById, events, today, onOpenLesson, onAddToDay }: Props) {
+export default function WeekView({ days, lessons, classById, studentsByClass, attendance, events, today, onOpenLesson, onAddToDay }: Props) {
   const styles = useStyles();
   const { palette } = useTheme();
   const { t, formatDate } = useI18n();
@@ -42,8 +45,10 @@ export default function WeekView({ days, lessons, classById, events, today, onOp
                   key={lesson.id}
                   lesson={lesson}
                   savedClass={classById.get(lesson.classId)}
+                  students={studentsByClass.get(lesson.classId) ?? []}
+                  attendance={attendance.get(lesson.id)}
                   accent={palette.accents[index % palette.accents.length]}
-                  onPress={() => onOpenLesson(day, lesson)}
+                  onPress={() => onOpenLesson(lesson)}
                 />
               ))}
               {dayLessons.length === 0 && !holiday && <Text style={styles.empty}>{t('schedule.noLessonsDay')}</Text>}

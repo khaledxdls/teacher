@@ -49,7 +49,10 @@ function RootStack() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="lesson/[id]" options={{ title: t('lesson.title') }} />
       <Stack.Screen name="class/[id]/index" options={{ title: t('classDetail.title') }} />
+      <Stack.Screen name="class/[id]/insights" options={{ title: t('insights.title') }} />
       <Stack.Screen name="class/[id]/grades" options={{ title: t('grades.title') }} />
       <Stack.Screen name="class/[id]/assessment/[assessmentId]" options={{ title: t('grades.title') }} />
       <Stack.Screen name="class/[id]/report" options={{ title: t('report.title') }} />

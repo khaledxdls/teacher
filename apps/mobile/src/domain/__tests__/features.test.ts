@@ -86,7 +86,7 @@ describe('calendar export (ics)', () => {
 
   it('folds long lines at 75 octets without splitting multi-byte characters', () => {
     const folded = foldLine(`SUMMARY:${'ح'.repeat(60)}`);
-    for (const line of folded.split('\r\n')) expect(Buffer.byteLength(line, 'utf8')).toBeLessThanOrEqual(75);
+    for (const line of folded.split('\r\n')) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
     expect(folded.split('\r\n ').join('')).toBe(`SUMMARY:${'ح'.repeat(60)}`);
   });
 });

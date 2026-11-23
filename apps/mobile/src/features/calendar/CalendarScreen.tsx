@@ -3,6 +3,7 @@ import { Switch, Text, View } from 'react-native';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import EmptyState from '../../components/ui/EmptyState';
 import ListRow from '../../components/ui/ListRow';
 import Screen from '../../components/ui/Screen';
 import SegmentedControl from '../../components/ui/SegmentedControl';
@@ -78,7 +79,7 @@ export default function CalendarScreen() {
             trailing={<Badge tone={event.kind === 'holiday' ? 'warning' : 'primary'} label={t(event.kind === 'holiday' ? 'calendar.holiday' : 'calendar.term').toUpperCase()} />}
           />
         ))}
-        {events.length === 0 && <Text style={[shared.hint, styles.padded]}>{t('calendar.empty')}</Text>}
+        {events.length === 0 && <EmptyState icon="sunny-outline" title={t('empty.calendarTitle')} message={t('empty.calendarMessage')} />}
         <View style={styles.addRow}>
           <Button label={t('calendar.addHoliday')} variant="secondary" onPress={() => setEditing('holiday')} style={styles.addButton} />
           <Button label={t('calendar.addTerm')} variant="secondary" onPress={() => setEditing('term')} style={styles.addButton} />
@@ -93,7 +94,6 @@ export default function CalendarScreen() {
 const useStyles = createStyles((c) => ({
   rotation: { gap: 8, marginTop: 4 },
   rotationLabel: { color: c.text, fontWeight: '600', textAlign: 'auto' },
-  padded: { paddingHorizontal: 16, paddingBottom: 12 },
   addRow: { flexDirection: 'row', gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: c.divider },
   addButton: { flex: 1 },
 }));
