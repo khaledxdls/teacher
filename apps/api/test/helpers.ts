@@ -2,6 +2,7 @@ import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { MemoryMailer } from '../src/lib/mailer.js';
 import { prisma } from '../src/lib/prisma.js';
+import { SYNC_COLLECTIONS } from '../src/routes/sync.js';
 
 /** Emails "sent" by the app under test. */
 export const mailer = new MemoryMailer();
@@ -26,7 +27,7 @@ export async function createUser(email = `teacher${++counter}@example.com`, pass
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 export type Change = {
-  collection: 'entry' | 'class' | 'template' | 'assessment' | 'event' | 'setting';
+  collection: (typeof SYNC_COLLECTIONS)[number];
   id: string;
   updatedAt: number;
   deleted: boolean;

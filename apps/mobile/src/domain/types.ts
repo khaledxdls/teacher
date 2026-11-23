@@ -3,6 +3,10 @@
  * - `updatedAt`: client timestamp (ms) of the last change, used for last-write-wins merging.
  * - `deleted`: tombstone flag; deleted records are kept so the deletion can sync to other devices.
  * - `dirty`: local-only flag marking changes that have not been pushed to the server yet.
+ *
+ * Data that several devices may edit independently (each student, each score, each
+ * attendance or homework mark) is its own record, so concurrent edits never overwrite
+ * each other wholesale.
  */
 export type SyncMeta = { updatedAt: number; deleted?: boolean; dirty?: boolean };
 export type SyncedRecord = SyncMeta & { id: string };
@@ -12,10 +16,10 @@ export type DateKey = string;
 /** `HH:MM`, 24-hour. */
 export type TimeOfDay = string;
 
-export type AttendanceStatus = 'present' | 'late' | 'absent';
+export type SavedClass = SyncedRecord & { name: string };
 
-export type Student = {
-  id: string;
+export type Student = SyncedRecord & {
+  classId: string;
   name: string;
   /** Free text such as allergies or learning needs. */
   notes?: string;
@@ -23,7 +27,17 @@ export type Student = {
   contact?: string;
 };
 
-export type SavedClass = SyncedRecord & { name: string; students: Student[] };
+export type LessonResource = { id: string; label: string; url: string };
+
+/** What the teacher plans for one lesson. */
+export type LessonPlan = {
+  objectives?: string;
+  /** Links to slides, worksheets, videos… (files are shared as links, e.g. from a drive). */
+  resources?: LessonResource[];
+  /** Homework set in this lesson; enables homework tracking for it. */
+  homework?: string;
+  homeworkDue?: DateKey;
+};
 
 export type ScheduleEntry = SyncedRecord & {
   date: DateKey;
@@ -35,8 +49,7 @@ export type ScheduleEntry = SyncedRecord & {
   /** After-class notes; open notes appear in the follow-ups list until marked done. */
   notes?: string;
   notesDone?: boolean;
-  /** Attendance by student id. Students without a value are unmarked. */
-  attendance?: Record<string, AttendanceStatus>;
+  plan?: LessonPlan;
   /** Shared by all lessons created from one repeating lesson. */
   seriesId?: string;
 };
@@ -50,15 +63,31 @@ export type TemplateEntry = Pick<ScheduleEntry, 'startTime' | 'endTime' | 'subje
 };
 export type ScheduleTemplate = SyncedRecord & { name: string; entries: TemplateEntry[] };
 
-/** A test or assignment, with one score per student (absent = not graded). */
-export type Assessment = SyncedRecord & {
-  classId: string;
-  title: string;
-  date: DateKey;
-  maxScore: number;
-  scores: Record<string, number>;
-};
+/** A test or assignment. Scores are separate `Score` records. */
+export type Assessment = SyncedRecord & { classId: string; title: string; date: DateKey; maxScore: number };
 export type AssessmentDraft = Omit<Assessment, keyof SyncMeta>;
+
+/** One student's score on one assessment. Id: `${assessmentId}:${studentId}`. */
+export type Score = SyncedRecord & { assessmentId: string; studentId: string; value: number };
+
+export type AttendanceStatus = 'present' | 'late' | 'absent';
+/** One student's attendance in one lesson. Id: `${lessonId}:${studentId}`. */
+export type AttendanceMark = SyncedRecord & { lessonId: string; studentId: string; status: AttendanceStatus };
+
+export type HomeworkStatus = 'done' | 'late' | 'missing';
+/** Whether a student handed in the homework set in a lesson. Id: `${lessonId}:${studentId}`. */
+export type HomeworkMark = SyncedRecord & { lessonId: string; studentId: string; status: HomeworkStatus };
+
+export type BehaviorKind = 'positive' | 'negative';
+/** A quick participation/behaviour note during a lesson. */
+export type BehaviorNote = SyncedRecord & {
+  studentId: string;
+  classId: string;
+  lessonId?: string;
+  date: DateKey;
+  kind: BehaviorKind;
+  note?: string;
+};
 
 export type CalendarEventKind = 'holiday' | 'term';
 /** A school holiday or term, covering `startDate` to `endDate` inclusive. */
@@ -72,13 +101,22 @@ export const CALENDAR_SETTINGS_ID = 'calendar';
 export type PlannerState = {
   entries: ScheduleEntry[];
   classes: SavedClass[];
+  students: Student[];
   templates: ScheduleTemplate[];
   assessments: Assessment[];
+  scores: Score[];
+  attendance: AttendanceMark[];
+  homework: HomeworkMark[];
+  behavior: BehaviorNote[];
   events: CalendarEvent[];
   /** Singleton settings records (currently only the calendar settings). */
   settings: CalendarSettings[];
 };
 
 export const emptyPlannerState: PlannerState = {
-  entries: [], classes: [], templates: [], assessments: [], events: [], settings: [],
+  entries: [], classes: [], students: [], templates: [], assessments: [], scores: [],
+  attendance: [], homework: [], behavior: [], events: [], settings: [],
 };
+
+/** Deterministic id for per-student records of a lesson or assessment. */
+export const pairId = (parentId: string, studentId: string) => `${parentId}:${studentId}`;

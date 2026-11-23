@@ -1,7 +1,9 @@
 import { PlannerState, SyncedRecord } from './types';
 
 /** Wire format shared with the API (`POST /sync`); keep in sync with apps/api/src/routes/sync.ts. */
-export type SyncCollection = 'entry' | 'class' | 'template' | 'assessment' | 'event' | 'setting';
+export type SyncCollection =
+  | 'entry' | 'class' | 'student' | 'template' | 'assessment' | 'score'
+  | 'attendance' | 'homework' | 'behavior' | 'event' | 'setting';
 export type SyncRecord = {
   collection: SyncCollection;
   id: string;
@@ -14,8 +16,13 @@ export type SyncRecord = {
 export const COLLECTIONS = {
   entry: 'entries',
   class: 'classes',
+  student: 'students',
   template: 'templates',
   assessment: 'assessments',
+  score: 'scores',
+  attendance: 'attendance',
+  homework: 'homework',
+  behavior: 'behavior',
   event: 'events',
   setting: 'settings',
 } as const satisfies Record<SyncCollection, keyof PlannerState>;

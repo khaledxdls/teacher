@@ -26,6 +26,30 @@ export const updateById = <T extends SyncedRecord>(records: T[], id: string, upd
 export const removeById = <T extends SyncedRecord>(records: T[], id: string, now: number) =>
   records.map((item) => (item.id === id ? tombstone(item, now) : item));
 
+/**
+ * Sets or clears a record with a deterministic id (e.g. one attendance mark per lesson
+ * and student). `fields === null` turns an existing record into a tombstone.
+ */
+export function setPairRecord<T extends SyncedRecord>(records: T[], id: string, fields: Omit<T, keyof SyncedRecord> | null, now: number): T[] {
+  const existing = records.find((item) => item.id === id);
+  if (fields === null) return existing && !existing.deleted ? records.map((item) => (item.id === id ? tombstone(item, now) : item)) : records;
+  const record = { ...fields, id, updatedAt: now, dirty: true } as T;
+  return existing ? records.map((item) => (item.id === id ? record : item)) : [...records, record];
+}
+
+/** Live records grouped by a key, e.g. students by class id. */
+export function groupBy<T extends SyncMeta, K>(records: T[], key: (record: T) => K) {
+  const groups = new Map<K, T[]>();
+  for (const record of records) {
+    if (record.deleted) continue;
+    const groupKey = key(record);
+    const group = groups.get(groupKey);
+    if (group) group.push(record);
+    else groups.set(groupKey, [record]);
+  }
+  return groups;
+}
+
 export const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 export const indexById = <T extends { id: string }>(records: T[]) => new Map(records.map((record) => [record.id, record]));

@@ -26,7 +26,11 @@ export type ErrorCode =
   | 'eventDatesInvalid'
   | 'eventMissing'
   | 'rotationAnchorRequired'
-  | 'dateInvalid';
+  | 'dateInvalid'
+  | 'studentMissing'
+  | 'behaviorMissing'
+  | 'linkInvalid'
+  | 'backupInvalid';
 
 export type ActionError = { code: ErrorCode; params?: Record<string, string | number> };
 

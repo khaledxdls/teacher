@@ -1,22 +1,23 @@
 import { isDateKey } from '../dates';
 import { fail } from '../errors';
-import { findLive, removeById, touch, updateById, upsert } from '../records';
-import { Assessment, AssessmentDraft, PlannerState } from '../types';
+import { alive, findLive, removeById, setPairRecord, touch, upsert } from '../records';
+import { Assessment, AssessmentDraft, pairId, PlannerState, Score } from '../types';
 import { CommandContext, CommandResult, done } from './types';
 
-/** Creates or updates an assessment's details (title, date, maximum score). Scores are kept. */
+const liveScoresOf = (state: PlannerState, assessmentId: string) =>
+  alive(state.scores).filter((score) => score.assessmentId === assessmentId);
+
+/** Creates or updates an assessment's details (title, date, maximum score). */
 export function saveAssessment(state: PlannerState, draft: AssessmentDraft, ctx: CommandContext): CommandResult<Assessment> {
   const title = draft.title.trim();
   if (!title) return fail('assessmentTitleRequired');
   if (!Number.isFinite(draft.maxScore) || draft.maxScore <= 0) return fail('assessmentMaxInvalid');
   if (!findLive(state.classes, draft.classId)) return fail('classMissing');
   if (!isDateKey(draft.date)) return fail('dateInvalid');
-
-  const existing = findLive(state.assessments, draft.id);
-  const assessment = touch<Assessment>({ ...existing, ...draft, title, scores: existing?.scores ?? draft.scores ?? {}, updatedAt: 0 }, ctx.now);
   // Lowering the maximum must not leave scores above it.
-  const outOfRange = Object.values(assessment.scores).some((score) => score > assessment.maxScore);
-  if (outOfRange) return fail('scoreOutOfRange', { max: assessment.maxScore });
+  if (liveScoresOf(state, draft.id).some((score) => score.value > draft.maxScore)) return fail('scoreOutOfRange', { max: draft.maxScore });
+
+  const assessment = touch<Assessment>({ id: draft.id, classId: draft.classId, title, date: draft.date, maxScore: draft.maxScore, updatedAt: 0 }, ctx.now);
   return done({ ...state, assessments: upsert(state.assessments, assessment) }, assessment);
 }
 
@@ -27,13 +28,8 @@ export function setScore(state: PlannerState, input: { assessmentId: string; stu
   if (input.score !== null && (!Number.isFinite(input.score) || input.score < 0 || input.score > assessment.maxScore)) {
     return fail('scoreOutOfRange', { max: assessment.maxScore });
   }
-  const assessments = updateById(state.assessments, assessment.id, (item) => {
-    const scores = { ...item.scores };
-    if (input.score === null) delete scores[input.studentId];
-    else scores[input.studentId] = input.score;
-    return { ...item, scores };
-  }, ctx.now);
-  return done({ ...state, assessments });
+  const fields = input.score === null ? null : { assessmentId: assessment.id, studentId: input.studentId, value: input.score };
+  return done({ ...state, scores: setPairRecord<Score>(state.scores, pairId(assessment.id, input.studentId), fields, ctx.now) });
 }
 
 export function deleteAssessment(state: PlannerState, input: { id: string }, ctx: CommandContext): CommandResult {

@@ -1,14 +1,19 @@
-import { buildAttendanceReport, ReportLabels, toCsv, toHtml } from '../reports';
 import { tombstone } from '../records';
-import { classOf, lesson, NOW } from '../../test-utils/domainFixtures';
+import { buildAttendanceReport, ReportLabels, toCsv, toHtml } from '../reports';
+import { attendanceMark, classOf, lesson, NOW, student } from '../../test-utils/domainFixtures';
 
-const savedClass = classOf('c7b', '7B', { students: [{ id: 's1', name: 'Ana' }, { id: 's2', name: 'Ben, "Jr"' }] });
+const savedClass = classOf('c7b', '7B');
+const students = [student('s1', 'Ana'), student('s2', 'Ben, "Jr"')];
 const entries = [
-  lesson({ id: 'a', date: '2026-11-13', attendance: { s1: 'present', s2: 'absent' } }),
-  lesson({ id: 'b', date: '2026-11-20', attendance: { s1: 'late' } }),
-  lesson({ id: 'outside', date: '2026-12-20', attendance: { s1: 'absent' } }),
-  lesson({ id: 'other-class', date: '2026-11-14', classId: 'x', attendance: { s1: 'absent' } }),
-  tombstone(lesson({ id: 'deleted', date: '2026-11-15', attendance: { s1: 'absent' } }), NOW),
+  lesson({ id: 'a', date: '2026-11-13' }),
+  lesson({ id: 'b', date: '2026-11-20' }),
+  lesson({ id: 'outside', date: '2026-12-20' }),
+  lesson({ id: 'other-class', date: '2026-11-14', classId: 'x' }),
+  tombstone(lesson({ id: 'deleted', date: '2026-11-15' }), NOW),
+];
+const marks = [
+  attendanceMark('a', 's1', 'present'), attendanceMark('a', 's2', 'absent'), attendanceMark('b', 's1', 'late'),
+  attendanceMark('outside', 's1', 'absent'), attendanceMark('other-class', 's1', 'absent'), attendanceMark('deleted', 's1', 'absent'),
 ];
 
 const labels: ReportLabels = {
@@ -24,7 +29,7 @@ const labels: ReportLabels = {
 };
 
 describe('attendance report', () => {
-  const report = buildAttendanceReport(savedClass, entries, { from: '2026-11-01', to: '2026-11-30' });
+  const report = buildAttendanceReport(savedClass, students, entries, marks, { from: '2026-11-01', to: '2026-11-30' });
 
   it('includes only live lessons of the class within the range', () => {
     expect(report.lessons.map((item) => item.id)).toEqual(['a', 'b']);
@@ -46,7 +51,7 @@ describe('attendance report', () => {
   });
 
   it('exports escaped HTML with the requested direction', () => {
-    const html = toHtml({ ...report, rows: [{ ...report.rows[0], student: { id: 'x', name: '<script>' } }] }, labels, 'rtl');
+    const html = toHtml({ ...report, rows: [{ ...report.rows[0], student: student('x', '<script>') }] }, labels, 'rtl');
     expect(html).toContain('dir="rtl"');
     expect(html).toContain('&lt;script&gt;');
     expect(html).not.toContain('<script>');

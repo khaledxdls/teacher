@@ -1,13 +1,15 @@
-import { attendanceRate, attendanceSummary, markAllPresent, nextAttendanceStatus, studentAttendanceStats } from '../attendance';
+import { attendanceRate, attendanceSummary, indexAttendance, nextAttendanceStatus, studentAttendanceStats } from '../attendance';
+import { behaviorCountsByStudent, sortBehaviorNotes } from '../behavior';
 import { calendarSettingsOf, holidayOn, isSchoolDay, rotationWeek, sortEvents, termOn } from '../calendar';
 import { doneFollowUps, openFollowUps } from '../followUps';
-import { assessmentAverage, gradedCount, parseScore, percentage, sortAssessments, studentAverage } from '../grades';
+import { assessmentAverage, gradedCount, indexScores, parseScore, percentage, sortAssessments, studentAverage } from '../grades';
+import { homeworkRate, homeworkSummary, indexHomework, lessonsWithHomework, nextHomeworkStatus, studentHomeworkStats } from '../homework';
 import { lessonsInScope, MAX_OCCURRENCES, occurrenceDates } from '../recurrence';
 import { alive, createId, tombstone, touch, upsert } from '../records';
 import { currentEntry, entriesInMonth, entriesInWeek, findScheduleConflict, nextEntry, sortEntries } from '../schedule';
 import { applyTemplateToWeek, createWeekTemplate, templateDays } from '../templates';
 import { CALENDAR_SETTINGS_ID, CalendarSettings } from '../types';
-import { assessment, FRIDAY, holiday, lesson, NOW, template } from '../../test-utils/domainFixtures';
+import { assessment, attendanceMark, behaviorNote, FRIDAY, holiday, homeworkMark, lesson, NOW, score, template } from '../../test-utils/domainFixtures';
 
 describe('records', () => {
   it('creates unique ids even within the same millisecond', () => {
@@ -114,7 +116,7 @@ describe('calendar', () => {
 
 describe('templates', () => {
   const week = [
-    lesson({ id: 'fri', date: '2026-11-13', notes: 'homework', attendance: { s1: 'present' } }),
+    lesson({ id: 'fri', date: '2026-11-13', notes: 'homework', plan: { objectives: 'x' } }),
     lesson({ id: 'thu', date: '2026-11-19', startTime: '11:00', endTime: '12:00', subject: 'Science' }),
   ];
 
@@ -142,22 +144,25 @@ describe('templates', () => {
 });
 
 describe('attendance', () => {
-  const students = [{ id: 's1', name: 'Ana' }, { id: 's2', name: 'Ben' }, { id: 's3', name: 'Cleo' }];
+  const students = [{ id: 's1' }, { id: 's2' }, { id: 's3' }];
 
-  it('cycles statuses and marks everyone present', () => {
+  it('cycles statuses', () => {
     expect([undefined, 'present', 'late', 'absent'].map((status) => nextAttendanceStatus(status as never)))
       .toEqual(['present', 'late', 'absent', undefined]);
-    expect(markAllPresent(students)).toEqual({ s1: 'present', s2: 'present', s3: 'present' });
   });
 
-  it('summarizes a lesson and totals per student', () => {
-    expect(attendanceSummary({ attendance: { s1: 'present', s2: 'absent', gone: 'present' } }, students))
-      .toEqual({ present: 1, late: 0, absent: 1, unmarked: 1 });
-    const stats = studentAttendanceStats([
-      lesson({ id: 'a', date: '2026-11-13', attendance: { s1: 'present', s2: 'late' } }),
-      lesson({ id: 'b', date: '2026-11-14', attendance: { s1: 'absent' } }),
-      lesson({ id: 'c', date: '2026-11-15', classId: 'other', attendance: { s1: 'present' } }),
-    ], 'c7b');
+  it('summarizes a lesson for current students and totals per student', () => {
+    const marks = [
+      attendanceMark('a', 's1', 'present'),
+      attendanceMark('a', 's2', 'late'),
+      attendanceMark('a', 'gone', 'present'),
+      attendanceMark('b', 's1', 'absent'),
+      attendanceMark('other-class', 's1', 'present'),
+      { ...attendanceMark('b', 's2', 'absent'), deleted: true },
+    ];
+    expect(attendanceSummary(indexAttendance(marks).get('a'), students)).toEqual({ present: 1, late: 1, absent: 0, unmarked: 1 });
+
+    const stats = studentAttendanceStats(marks, new Set(['a', 'b']));
     expect(stats.get('s1')).toEqual({ present: 1, late: 0, absent: 1, marked: 2 });
     expect(attendanceRate(stats.get('s1')!)).toBe(50);
     expect(attendanceRate(stats.get('s2')!)).toBe(100);
@@ -165,22 +170,57 @@ describe('attendance', () => {
 });
 
 describe('grades', () => {
-  const students = [{ id: 's1', name: 'Ana' }, { id: 's2', name: 'Ben' }];
-  const quiz = assessment({ id: 'q', maxScore: 20, scores: { s1: 15, s2: 10, gone: 20 } });
-  const test = assessment({ id: 't', maxScore: 50, scores: { s1: 50 }, date: '2026-12-01' });
+  const students = [{ id: 's1' }, { id: 's2' }];
+  const quiz = assessment({ id: 'q', maxScore: 20 });
+  const test = assessment({ id: 't', maxScore: 50, date: '2026-12-01' });
+  const scores = indexScores([score('q', 's1', 15), score('q', 's2', 10), score('q', 'gone', 20), score('t', 's1', 50), { ...score('t', 's2', 1), deleted: true }]);
 
   it('computes percentages and averages', () => {
     expect(percentage(15, 20)).toBe(75);
     expect(percentage(1, 3)).toBe(33.3);
-    expect(studentAverage([quiz, test], 's1')).toBe(87.5);
-    expect(studentAverage([quiz, test], 's3')).toBeNull();
-    expect(assessmentAverage(quiz, students)).toBe(62.5);
-    expect(gradedCount(test, students)).toBe(1);
+    expect(studentAverage([quiz, test], scores, 's1')).toBe(87.5);
+    expect(studentAverage([quiz, test], scores, 's3')).toBeNull();
+    expect(assessmentAverage(quiz, scores, students)).toBe(62.5);
+    expect(gradedCount(test, scores, students)).toBe(1);
     expect(sortAssessments([quiz, test]).map((item) => item.id)).toEqual(['t', 'q']);
   });
 
   it.each([['17', 17], [' 17,5 ', 17.5], ['', null], ['abc', 'invalid']])('parses "%s"', (input, expected) => {
     expect(parseScore(input)).toBe(expected);
+  });
+});
+
+describe('homework', () => {
+  it('cycles statuses, finds homework lessons and totals per student', () => {
+    expect([undefined, 'done', 'late', 'missing'].map((status) => nextHomeworkStatus(status as never)))
+      .toEqual(['done', 'late', 'missing', undefined]);
+    const lessons = [
+      lesson({ id: 'b', date: '2026-11-20', plan: { homework: 'Page 12' } }),
+      lesson({ id: 'a', date: '2026-11-13', plan: { homework: 'Exercise 3' } }),
+      lesson({ id: 'none', date: '2026-11-14', plan: { objectives: 'x' } }),
+      lesson({ id: 'other', date: '2026-11-14', classId: 'x', plan: { homework: 'y' } }),
+    ];
+    expect(lessonsWithHomework(lessons, 'c7b').map((item) => item.id)).toEqual(['a', 'b']);
+
+    const marks = [homeworkMark('a', 's1', 'done'), homeworkMark('b', 's1', 'missing'), homeworkMark('a', 's2', 'late')];
+    expect(homeworkSummary(indexHomework(marks).get('a'), [{ id: 's1' }, { id: 's2' }, { id: 's3' }]))
+      .toEqual({ done: 1, late: 1, missing: 0, unmarked: 1 });
+    const stats = studentHomeworkStats(marks, new Set(['a', 'b']));
+    expect(stats.get('s1')).toEqual({ done: 1, late: 0, missing: 1, marked: 2 });
+    expect(homeworkRate(stats.get('s1')!)).toBe(50);
+  });
+});
+
+describe('behavior', () => {
+  it('counts positive and negative notes and sorts newest first', () => {
+    const notes = [
+      behaviorNote('1', 's1', 'positive', '2026-11-13'),
+      behaviorNote('2', 's1', 'negative', '2026-11-14'),
+      behaviorNote('3', 's1', 'positive', '2026-11-12'),
+      { ...behaviorNote('4', 's1', 'negative'), deleted: true },
+    ];
+    expect(behaviorCountsByStudent(notes).get('s1')).toEqual({ positive: 2, negative: 1 });
+    expect(sortBehaviorNotes(notes.slice(0, 3)).map((note) => note.id)).toEqual(['2', '1', '3']);
   });
 });
 

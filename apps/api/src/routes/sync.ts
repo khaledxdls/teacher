@@ -6,7 +6,10 @@ import { syncRecords } from '../services/sync.js';
 const MAX_CHANGES = 500;
 
 /** Keep in sync with `SyncCollection` in the mobile app (apps/mobile/src/domain/sync.ts). */
-export const SYNC_COLLECTIONS = ['entry', 'class', 'template', 'assessment', 'event', 'setting'] as const;
+export const SYNC_COLLECTIONS = [
+  'entry', 'class', 'student', 'template', 'assessment', 'score',
+  'attendance', 'homework', 'behavior', 'event', 'setting',
+] as const;
 
 const change = z.object({
   collection: z.enum(SYNC_COLLECTIONS),

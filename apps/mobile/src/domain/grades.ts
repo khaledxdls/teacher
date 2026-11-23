@@ -1,4 +1,18 @@
-import { Assessment, Student } from './types';
+import { Assessment, Score, Student } from './types';
+
+/** Live scores indexed by assessment, then student. */
+export type ScoreIndex = ReadonlyMap<string, ReadonlyMap<string, number>>;
+
+export function indexScores(scores: Score[]): ScoreIndex {
+  const index = new Map<string, Map<string, number>>();
+  for (const score of scores) {
+    if (score.deleted) continue;
+    const byStudent = index.get(score.assessmentId) ?? new Map<string, number>();
+    byStudent.set(score.studentId, score.value);
+    index.set(score.assessmentId, byStudent);
+  }
+  return index;
+}
 
 /** Score as a percentage of the maximum, rounded to one decimal. */
 export const percentage = (score: number, maxScore: number) => Math.round((score / maxScore) * 1000) / 10;
@@ -6,20 +20,24 @@ export const percentage = (score: number, maxScore: number) => Math.round((score
 const average = (values: number[]) =>
   values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
 
+export const scoreOf = (index: ScoreIndex, assessmentId: string, studentId: string) => index.get(assessmentId)?.get(studentId);
+
 /** A student's mean percentage across graded assessments, or null if none are graded. */
-export const studentAverage = (assessments: Assessment[], studentId: string) =>
-  average(assessments
-    .filter((assessment) => assessment.scores[studentId] !== undefined)
-    .map((assessment) => percentage(assessment.scores[studentId], assessment.maxScore)));
+export const studentAverage = (assessments: Assessment[], index: ScoreIndex, studentId: string) =>
+  average(assessments.flatMap((assessment) => {
+    const score = scoreOf(index, assessment.id, studentId);
+    return score === undefined ? [] : [percentage(score, assessment.maxScore)];
+  }));
 
 /** Class mean for one assessment (current students only), as a percentage. */
-export const assessmentAverage = (assessment: Assessment, students: Student[]) =>
-  average(students
-    .filter((student) => assessment.scores[student.id] !== undefined)
-    .map((student) => percentage(assessment.scores[student.id], assessment.maxScore)));
+export const assessmentAverage = (assessment: Assessment, index: ScoreIndex, students: Pick<Student, 'id'>[]) =>
+  average(students.flatMap((student) => {
+    const score = scoreOf(index, assessment.id, student.id);
+    return score === undefined ? [] : [percentage(score, assessment.maxScore)];
+  }));
 
-export const gradedCount = (assessment: Assessment, students: Student[]) =>
-  students.filter((student) => assessment.scores[student.id] !== undefined).length;
+export const gradedCount = (assessment: Assessment, index: ScoreIndex, students: Pick<Student, 'id'>[]) =>
+  students.filter((student) => scoreOf(index, assessment.id, student.id) !== undefined).length;
 
 export const sortAssessments = (assessments: Assessment[]) =>
   [...assessments].sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));

@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/lib/prisma.js';
+import { SYNC_COLLECTIONS } from '../src/routes/sync.js';
 import { api, bearer, change, createUser, resetDatabase, sync } from './helpers.js';
 
 beforeEach(resetDatabase);
@@ -12,7 +13,7 @@ describe('POST /sync', () => {
 
   it('accepts every planner collection', async () => {
     const { token } = await createUser();
-    const collections = ['entry', 'class', 'template', 'assessment', 'event', 'setting'] as const;
+    const collections = SYNC_COLLECTIONS;
     const response = await sync(token, 0, collections.map((collection) => change({ id: collection, collection }))).expect(200);
     expect(response.body.changes).toHaveLength(collections.length);
   });

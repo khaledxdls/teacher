@@ -1,7 +1,7 @@
-import { attendanceRate, StudentAttendanceStats } from './attendance';
+import { attendanceRate, emptyAttendanceStats, indexAttendance, StudentAttendanceStats } from './attendance';
 import { inDateRange } from './dates';
 import { sortEntries } from './schedule';
-import { AttendanceStatus, DateKey, SavedClass, ScheduleEntry, Student } from './types';
+import { AttendanceMark, AttendanceStatus, DateKey, SavedClass, ScheduleEntry, Student } from './types';
 
 export type DateRange = { from: DateKey; to: DateKey };
 
@@ -20,14 +20,21 @@ export type AttendanceReport = {
   rows: AttendanceReportRow[];
 };
 
-/** Attendance of every current student for the class's lessons within `range`. */
-export function buildAttendanceReport(savedClass: SavedClass, entries: ScheduleEntry[], range: DateRange): AttendanceReport {
+/** Attendance of the given students for the class's live lessons within `range`. */
+export function buildAttendanceReport(
+  savedClass: SavedClass,
+  students: Student[],
+  entries: ScheduleEntry[],
+  marks: AttendanceMark[],
+  range: DateRange,
+): AttendanceReport {
   const lessons = sortEntries(entries.filter((entry) =>
     !entry.deleted && entry.classId === savedClass.id && inDateRange(entry.date, range.from, range.to)));
+  const byLesson = indexAttendance(marks);
 
-  const rows = savedClass.students.map((student) => {
-    const statuses = lessons.map((lesson) => lesson.attendance?.[student.id]);
-    const stats: StudentAttendanceStats = { present: 0, late: 0, absent: 0, marked: 0 };
+  const rows = students.map((student) => {
+    const statuses = lessons.map((lesson) => byLesson.get(lesson.id)?.get(student.id));
+    const stats = emptyAttendanceStats();
     for (const status of statuses) {
       if (!status) continue;
       stats[status] += 1;
@@ -55,7 +62,6 @@ export type ReportLabels = {
   status: Record<AttendanceStatus, string>;
   /** Formats a lesson column header, e.g. "Mon 12 Nov 09:00". */
   lessonHeader: (lesson: AttendanceReport['lessons'][number]) => string;
-  /** Formats the date range line. */
   rangeLabel: string;
 };
 
@@ -79,7 +85,7 @@ export function toCsv(report: AttendanceReport, labels: ReportLabels): string {
   return `﻿${[header, ...rows].map((cells) => cells.map(csvCell).join(',')).join('\r\n')}\r\n`;
 }
 
-const escapeHtml = (value: string) =>
+export const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 
 /** Printable HTML table (used to produce the PDF). */
